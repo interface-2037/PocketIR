@@ -45,5 +45,7 @@ if (Test-Path $sta) {
 } else { Write-Warning "No timing summary found at $sta" }
 
 Write-Host "`n== Packaging"
-python (Join-Path $root 'tools\package_core.py')
+# builds from a non-default Quartus get a tag so they never overwrite the 18.1 package
+$tag = if ($Quartus -eq '18.1') { '' } elseif (Test-Path $Quartus -PathType Leaf) { 'qcustom' } else { "q$Quartus" }
+if ($tag) { python (Join-Path $root 'tools\package_core.py') --tag $tag } else { python (Join-Path $root 'tools\package_core.py') }
 if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }

@@ -9,7 +9,7 @@ Reads the Quartus .rbf, reverses the bit order of every byte (the Pocket loads
 
 Copy the contents of build/sdcard/ to the root of the SD card.
 
-Usage:  python tools/package_core.py [--rbf PATH]
+Usage:  python tools/package_core.py [--rbf PATH] [--tag TAG]
 """
 
 import argparse
@@ -31,6 +31,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rbf", type=Path,
                     default=ROOT / "src/fpga/output_files/ap_core.rbf")
+    ap.add_argument("--tag", default="", help="suffix for the zip name, e.g. q25.1")
     args = ap.parse_args()
 
     if not args.rbf.is_file():
@@ -56,7 +57,8 @@ def main() -> int:
     shutil.copy2(ROOT / f"dist/platforms/{platform}.json", out / "Platforms" / f"{platform}.json")
     shutil.copy2(ROOT / f"dist/platforms/_images/{platform}.bin", img_dir / f"{platform}.bin")
 
-    zip_path = ROOT / "build" / f"{core_id}_{meta['version']}_{meta['date_release']}.zip"
+    tag = f"_{args.tag}" if args.tag else ""
+    zip_path = ROOT / "build" / f"{core_id}_{meta['version']}_{meta['date_release']}{tag}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(out.rglob("*")):
             if f.is_file():
