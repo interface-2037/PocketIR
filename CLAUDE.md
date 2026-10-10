@@ -139,7 +139,7 @@ Work **one milestone at a time**. Don't start the next until the human confirms 
 - Note: crossing from `clk_74a` (input/IR) to the 12.288 MHz video clock needs proper synchronization.
 - **Done when:** the UI shows the current device and button map, and highlights while sending.
 
-### M5 implementation notes (v0.2.0)
+### M5 implementation notes: done on hardware at v0.4.1 (2026-10-09)
 - Video is **400×360 @ 60 Hz** (v0.4.0, 9.324 MHz, 420×370 total): exactly 4× into the 1600×1440 panel, so it fills the screen with square pixels. `video.json` is 10:9, rotation 180.
 - **Hardware finding:** with this detailed, anti-aliased picture, the Pocket's scaler corrupts larger frames: streaks, striped edges, broken lines. 800×720 corrupted at 41 MHz and 30 MHz, with rotation 180 and 0. 720×648 corrupted. 640×480 and 400×360 were clean. Don't go above 640×480 without a new hardware test.
 - The background must stay flat. A 1-level gradient banded visibly on the panel.
