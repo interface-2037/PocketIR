@@ -12,10 +12,20 @@ $rtl = @(Get-ChildItem (Join-Path $root 'src\fpga\core\ir'), (Join-Path $root 's
         -Filter *.v -ErrorAction SilentlyContinue | ForEach-Object FullName)
 
 $failed = 0
+
+# Python self-checks first: they also write the vectors some testbenches read
+# (build/ir_expected). tb_ui_video's frames come from tools/ui/ui_rom.py.
+foreach ($py in Get-ChildItem (Join-Path $root 'tools') -Recurse -Filter 'test_*.py') {
+    $result = python $py.FullName 2>&1 | Out-String
+    Write-Host $result.Trim()
+    if ($LASTEXITCODE -ne 0 -or $result -notmatch '(?m)^PASS') { $failed++ }
+}
+
 foreach ($tb in Get-ChildItem $PSScriptRoot -Filter 'tb_*.v') {
     if ($Only -and $tb.BaseName -ne $Only) { continue }
     $vvp = Join-Path $out ($tb.BaseName + '.vvp')
-    iverilog -g2012 -I (Join-Path $root 'src\fpga\core\ui') -o $vvp $tb.FullName $rtl
+    # -s: only the testbench is a root, so unused RTL modules are not elaborated
+    iverilog -g2012 -s $tb.BaseName -I (Join-Path $root 'src\fpga\core\ui') -o $vvp $tb.FullName $rtl
     if ($LASTEXITCODE -ne 0) { Write-Host "FAIL $($tb.BaseName) (compile error)"; $failed++; continue }
     $result = vvp -n $vvp | Out-String
     Write-Host $result.Trim()
