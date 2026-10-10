@@ -11,7 +11,8 @@
 //   consumer: plays segments on exact unit ticks (unit = N clock cycles from
 //             the protocol header). At a frame boundary it repeats while the
 //             key is held or fewer than min frames were sent, else stops and
-//             flushes the speculative work. Timing matches ir_sirc_tx.v.
+//             flushes the speculative work. Timing matches the original hand-written
+//             SIRC encoder (verified on hardware, retired after M6).
 //   carrier:  period/high from the protocol header, restarted on every mark.
 //
 // key is a level (button held). A press starts on its rising edge while idle;

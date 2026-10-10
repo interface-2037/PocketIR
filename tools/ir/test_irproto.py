@@ -3,7 +3,7 @@
 1. The reference encoder against facts independent of our definitions: codes
    proven on hardware (Sony STR-DH790) and well-known published codes (LG,
    Samsung, Philips power), plus timing facts and Kaseikyo checksums.
-2. Vectors: build/ir_expected/sirc_ref.txt (old SIRC encoder comparison),
+2. Vectors:
    build/ir_expected/ir_proto_sim.hex (microcode at the 1 MHz test clock) and
    build/ir_expected/engine_cases.txt (every protocol: taps, holds, toggles).
 
@@ -90,12 +90,6 @@ check(set(ircompile.PROTO_ORDER) == set(ir.PROTOCOLS), "PROTO_ORDER does not lis
 # ---------------------------------------------------------------- 2. vectors
 out = ROOT / "build" / "ir_expected"
 out.mkdir(parents=True, exist_ok=True)
-
-with open(out / "sirc_ref.txt", "w") as fh:
-    for _, proto, addr, cmd in SONY_DH790:
-        r = ir.encode(proto, addr, cmd, frames=3, clk_hz=SIM_CLK)
-        fh.write(f"{int(proto[4:])} {addr} {cmd} {len(r)}\n")
-        fh.writelines(f"{lv} {c}\n" for lv, c in r)
 
 (out / "ir_proto_sim.hex").write_text("".join(f"{w:08X}\n" for w in ircompile.compile_rom(SIM_CLK)))
 

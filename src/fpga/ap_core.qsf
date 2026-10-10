@@ -740,10 +740,6 @@ set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 set_global_assignment -name QIP_FILE apf/apf.qip
 set_global_assignment -name VERILOG_FILE core/core_top.v
 set_global_assignment -name VERILOG_FILE core/core_bridge_cmd.v
-set_global_assignment -name VERILOG_FILE core/ir/ir_blink.v
-set_global_assignment -name VERILOG_FILE core/ir/ir_carrier.v
-set_global_assignment -name VERILOG_FILE core/ir/ir_diag.v
-set_global_assignment -name VERILOG_FILE core/ir/ir_sirc_tx.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_code_rom.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_remote.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_engine.v
