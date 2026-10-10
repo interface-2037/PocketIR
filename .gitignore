@@ -1,0 +1,16 @@
+# Quartus build output
+src/fpga/db/
+src/fpga/incremental_db/
+src/fpga/greybox_tmp/
+src/fpga/output_files/*
+!src/fpga/output_files/.gitignore
+src/fpga/*.qws
+src/fpga/*.rpt
+
+# Packaged SD-card build (made by tools/package_core.py)
+build/
+
+# Simulation output
+sim/out/
+*.vcd
+__pycache__/

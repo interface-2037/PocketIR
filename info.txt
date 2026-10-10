@@ -1,0 +1,4 @@
+IR Remote
+
+Turns the Analogue Pocket's infrared LED into a universal TV/AV remote.
+Based on the openFPGA core template (https://github.com/open-fpga/core-template).
