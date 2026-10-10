@@ -226,8 +226,11 @@ input   wire    [15:0]  cont4_trig
 );
 
 // M4: Pocket buttons operate the Sony STR-DH790 (codes in ir/ir_code_rom.v).
-//   Start power, R1/L1 volume +/-, Select mute, d-pad menu, A enter,
-//   B return, X home, Y options. Tap = 3 frames, hold = repeat.
+// Held rotated 180 deg (bottom edge toward the receiver; video.json rotates
+// the picture to match), so buttons are mapped by position in that grip:
+//   Start power, Select mute, L1/R1 (right/left) volume +/-,
+//   d-pad menu (flipped), Y enter, X BACK, B AMP MENU, A options.
+// Tap = 3 frames, hold = repeat.
 // Analogue: the IR LED is active high and must never be driven with DC --
 // port_ir_tx only ever carries the 40 kHz PWM carrier (50% duty: best range
 // in the M3 test). Receiver stays off (TX works with port_ir_rx_disable = 1).
@@ -619,6 +622,9 @@ always @(posedge clk_core_12288 or negedge reset_n) begin
                 
                 // M4: grey idle, green while sending
                 vidout_rgb <= m4_rgb;
+                // orientation marker: framebuffer top-left (should appear
+                // top-left in the user's 180 deg grip)
+                if (visible_x < 16 && visible_y < 16) vidout_rgb <= 24'hFFFFFF;
                 
             end 
         end

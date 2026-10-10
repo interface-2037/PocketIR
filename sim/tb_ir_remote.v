@@ -80,18 +80,18 @@ end
 function [24:0] code_of(input integer idx);
     begin
         case (idx)
-            15: code_of = {5'd15, 13'd48,  7'd21};
-            9:  code_of = {5'd15, 13'd48,  7'd18};
-            8:  code_of = {5'd15, 13'd48,  7'd19};
-            14: code_of = {5'd15, 13'd48,  7'd20};
-            0:  code_of = {5'd15, 13'd176, 7'd120};
-            1:  code_of = {5'd15, 13'd176, 7'd121};
-            2:  code_of = {5'd15, 13'd176, 7'd122};
-            3:  code_of = {5'd15, 13'd176, 7'd123};
-            4:  code_of = {5'd15, 13'd48,  7'd12};
-            5:  code_of = {5'd20, 13'd272, 7'd125};
-            6:  code_of = {5'd15, 13'd48,  7'd83};
-            7:  code_of = {5'd20, 13'd272, 7'd115};
+            15: code_of = {5'd15, 13'd48,  7'd21};    // power
+            14: code_of = {5'd15, 13'd48,  7'd20};    // mute
+            8:  code_of = {5'd15, 13'd48,  7'd18};    // volume +
+            9:  code_of = {5'd15, 13'd48,  7'd19};    // volume -
+            1:  code_of = {5'd15, 13'd176, 7'd120};   // menu up
+            0:  code_of = {5'd15, 13'd176, 7'd121};   // menu down
+            3:  code_of = {5'd15, 13'd176, 7'd122};   // menu left
+            2:  code_of = {5'd15, 13'd176, 7'd123};   // menu right
+            7:  code_of = {5'd15, 13'd48,  7'd12};    // enter
+            6:  code_of = {5'd20, 13'd272, 7'd125};   // BACK
+            5:  code_of = {5'd15, 13'd48,  7'd83};    // AMP MENU
+            4:  code_of = {5'd20, 13'd272, 7'd115};   // options
             default: code_of = 25'd0;
         endcase
     end
@@ -143,12 +143,12 @@ initial begin
     nframes = 0; keys = 16'd1 << 11; repeat (5 * T) @(negedge clk); keys = 0; wait_idle;
     if (nframes != 0) begin $display("  unmapped button sent %0d frames", nframes); errors = errors + 1; end
 
-    // Hold R1 (volume +) for ~8 frames: repeats.
+    // Hold R1 (volume -) for ~8 frames: repeats.
     nframes = 0; keys = 16'd1 << 9; repeat (8 * 75 * T) @(negedge clk); keys = 0; wait_idle;
     if (nframes < 8) begin $display("  hold R1: only %0d frames", nframes); errors = errors + 1; end
     for (f = 0; f < nframes && f < 64; f = f + 1)
         if (!frame_is(f, 9)) begin $display("  hold R1 frame %0d wrong", f); errors = errors + 1; end
-    $display("  hold R1: %0d frames of volume +", nframes);
+    $display("  hold R1: %0d frames of volume -", nframes);
 
     // Hold Up, then switch to Down while frames are still going out.
     nframes = 0;

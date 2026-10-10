@@ -121,6 +121,12 @@ Work **one milestone at a time**. Don't start the next until the human confirms 
 - Hard-code one known code for a TV the human owns (human supplies the code; NEC TV codes are widely documented).
 - **Done when:** the TV responds. **Measure the maximum working distance and report it.** If range is only inches, stop and decide with the human whether to continue, accept short range, or add an external emitter via the link port.
 
+### Grip and button-layout rule (decided at M4, 2026-10-09)
+- The IR leaves through the power LED at the **bottom edge**, so interface2037 holds the Pocket **rotated 180°**: screen toward him, upside down, d-pad under his right thumb, face buttons on the left.
+- `video.json` uses `"rotation": 180` so the picture reads correctly in that grip. Draw UI in normal framebuffer coordinates.
+- Map the d-pad, face buttons and shoulders **by position in that grip**, not by printed label. Start/Select stay by label.
+- Current map (`ir/ir_code_rom.v`): Start power, Select mute, L1 (right) vol+, R1 (left) vol−, d-pad flipped for menu nav, Y Enter, X BACK, B AMP MENU, A Options. Use the DH790 remote's names (**AMP MENU**, **BACK**) in any on-screen legend.
+
 ### M4 — Button mapping for one device
 - `button_edge.v`: synchronize and edge-detect `cont1_key`.
 - Map buttons → codes for one device: e.g. Start = power, L1/R1 = volume, up/down = channel, Select = mute, d-pad + A = navigation/OK, B = back.
