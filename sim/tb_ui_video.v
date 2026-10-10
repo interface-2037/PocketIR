@@ -1,8 +1,8 @@
 // tb_ui_video.v
 // Runs ui_video for two frames and compares every active pixel with the
 // frames tools/ui/ui_rom.py expects: idle, then ENTER pressed + TX lit.
-// Also checks frame geometry (800x720 DE pixels, 820x730 total) and that the
-// RLE stream never runs dry. Writes the captured frames to sim/out/ for
+// Also checks frame geometry (active and total sizes from ui_rle.vh) and that
+// the RLE stream never runs dry. Writes the captured frames to sim/out/ for
 // viewing (tools/ui/frame_to_png.py). Prints PASS or FAIL.
 //
 // Needs build/ui_expected/*.hex: run  python tools/ui/ui_rom.py  first.
@@ -11,12 +11,14 @@
 
 module tb_ui_video;
 
-localparam W = 800, H = 720, N = W * H;
+`include "ui_rle.vh"
+localparam W = UI_H_ACTIVE, H = UI_V_ACTIVE, N = W * H;
+localparam real HALF_NS = 1.0e9 / (2.0 * UI_PIXEL_HZ);
 localparam REGION_ENTER = 4'd8;     // key bit 7 + 1
 localparam REGION_TX    = 4'd13;
 
 reg clk = 0;
-always #16.706 clk = ~clk;          // 29.93 MHz
+always #(HALF_NS) clk = ~clk;
 
 reg  [3:0]  region = 0;
 reg         tx     = 0;
@@ -65,8 +67,8 @@ task run_frame(input integer which, input integer fd);
             $display("  frame %0d: %0d pixels in %0d lines (exp %0d in %0d)", which, k, lines, N, H);
             errors = errors + 1;
         end
-        if (cycles != 820 * 730) begin
-            $display("  frame %0d: %0d clocks per frame (exp %0d)", which, cycles, 820 * 730);
+        if (cycles != UI_H_TOTAL * UI_V_TOTAL) begin
+            $display("  frame %0d: %0d clocks per frame (exp %0d)", which, cycles, UI_H_TOTAL * UI_V_TOTAL);
             errors = errors + 1;
         end
         $display("  frame %0d (%s): %0d mismatching pixels", which, which ? "ENTER + TX" : "idle", bad);

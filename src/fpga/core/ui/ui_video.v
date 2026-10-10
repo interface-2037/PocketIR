@@ -1,11 +1,11 @@
 // ui_video.v
-// M5: 800x720 @ 60 Hz video for the remote UI (exactly 2x into the
-// Pocket's 1600x1440 panel).
+// M5: video for the remote UI. Resolution, totals and pixel clock come from
+// ui_rle.vh, written by tools/ui/ui_rom.py (which also sets video.json and
+// the PLL). On hardware, 800x720 corrupted; 640x480 was clean.
 //
-// Timing: 820 x 730 total at 29.93 MHz = 50 Hz, minimal blanking (v0.3.1:
-// 41 MHz showed artifacts on hardware). Same structure as
-// the core template: VS pulse at x=0,y=0, HS pulse at x=3, DE in the active
-// window).
+// Timing: UI_H_TOTAL x UI_V_TOTAL at UI_PIXEL_HZ with minimal blanking. Same
+// structure as the core template: VS pulse at x=0,y=0, HS pulse at x=3, DE in
+// the active window.
 //
 // Picture: run-length-encoded ROM made by tools/ui/ui_rom.py. Each word is
 // {len-1[7:0], region[3:0], lit[7:0], idle[7:0]} covering len active pixels in
@@ -22,7 +22,7 @@ module ui_video #(
     parameter RLE_FILE = "core/ui/ui_rle.hex",
     parameter PAL_FILE = "core/ui/ui_palette.hex"
 ) (
-    input  wire        clk,             // 29.93 MHz pixel clock
+    input  wire        clk,             // UI_PIXEL_HZ pixel clock
     input  wire        reset_n,
     input  wire [3:0]  active_region,   // 0 = none (already synchronised to clk)
     input  wire        tx_on,           // already synchronised to clk
@@ -36,8 +36,8 @@ module ui_video #(
 
 `include "ui_rle.vh"
 
-localparam H_TOTAL  = 820, H_BPORCH = 10, H_ACTIVE = 800;
-localparam V_TOTAL  = 730, V_BPORCH = 6,  V_ACTIVE = 720;
+localparam H_TOTAL  = UI_H_TOTAL, H_BPORCH = UI_H_BPORCH, H_ACTIVE = UI_H_ACTIVE;
+localparam V_TOTAL  = UI_V_TOTAL, V_BPORCH = UI_V_BPORCH, V_ACTIVE = UI_V_ACTIVE;
 localparam TX_REGION = 4'd13;
 localparam AW = $clog2(UI_RLE_WORDS);
 
