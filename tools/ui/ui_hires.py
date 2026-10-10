@@ -178,16 +178,19 @@ def render_4x3(w, h, pressed=None, tx=None):
     return c.done()
 
 
-def render(w=800, h=720, pressed=None, tx=None):
+def render(w=800, h=720, pressed=None, tx=None, text=True):
     """800x720 (10:9): exactly 2x into the Pocket's 1600x1440 panel.
-    tx: TX lamp lit (default: lit whenever a button is pressed)."""
+    tx: TX lamp lit (default: lit whenever a button is pressed).
+    text=False: graphics only -- labels and the device name are drawn at
+    runtime by the text layer (M7); the +/- signs and TX stay in the picture."""
     c = Canvas(w, h, base_w=800, native_text=True)
     c.flat()
+    label = c.text if text else (lambda *a, **k: None)
     lab = lambda f: ACC if pressed == f else LABEL
     L = 22                                     # label size
 
     # header: device + TX lamp
-    c.text(40, 58, "SONY STR-DH790", 30, TITLE, "lm", "Bold")
+    label(40, 58, "SONY STR-DH790", 30, TITLE, "lm", "Bold")
     tx_on = (pressed is not None) if tx is None else tx
     c.d.rounded_rectangle(c.s(682, 38, 760, 78), c.s(20)[0],
                           outline=ACC if tx_on else DIM, width=c.s(3)[0])
@@ -199,22 +202,22 @@ def render(w=800, h=720, pressed=None, tx=None):
     c.circle_btn(330, y, 19, pressed == "POWER")
     c.circle_btn(400, y, 19)
     c.circle_btn(470, y, 19, pressed == "MUTE")
-    c.text(294, y, "POWER", L, lab("POWER"), "rm")
-    c.text(506, y, "MUTE", L, lab("MUTE"), "lm")
+    label(294, y, "POWER", L, lab("POWER"), "rm")
+    label(506, y, "MUTE", L, lab("MUTE"), "lm")
 
     # face buttons (left in the grip)
     fx, fy, off, r = 282, 404, 86, 36
     for dx, dy, f in [(0, -off, "AMP MENU"), (-off, 0, "OPTIONS"), (off, 0, "ENTER"), (0, off, "BACK")]:
         c.circle_btn(fx + dx, fy + dy, r, pressed == f)
-    c.text(fx, fy - off - r - 26, "AMP MENU", L, lab("AMP MENU"))
-    c.text(fx - off - r - 18, fy, "OPTIONS", L, lab("OPTIONS"), "rm")
-    c.text(fx + off + r + 18, fy, "ENTER", L, lab("ENTER"), "lm")
-    c.text(fx, fy + off + r + 28, "BACK", L, lab("BACK"))
+    label(fx, fy - off - r - 26, "AMP MENU", L, lab("AMP MENU"))
+    label(fx - off - r - 18, fy, "OPTIONS", L, lab("OPTIONS"), "rm")
+    label(fx + off + r + 18, fy, "ENTER", L, lab("ENTER"), "lm")
+    label(fx, fy + off + r + 28, "BACK", L, lab("BACK"))
 
     # d-pad (right in the grip)
     dx0 = 652
     c.dpad(dx0, fy, 102, 35, pressed if pressed in ("UP", "DOWN", "LEFT", "RIGHT") else None)
-    c.text(dx0, fy + 102 + 30, "MENU", L, LABEL)
+    label(dx0, fy + 102 + 30, "MENU", L, LABEL)
 
     # shoulders (bottom edge of the grip): R1 left = VOLUME DOWN, L1 right = VOLUME UP
     for x0, x1, f, sign, word in [(40, 380, "VOL-", MINUS, "VOLUME DOWN"), (420, 760, "VOL+", "+", "VOLUME UP")]:
@@ -222,7 +225,7 @@ def render(w=800, h=720, pressed=None, tx=None):
         c.shoulder(x0, 604, x1, 674, on)
         col = ACC_DARK if on else LABEL
         c.text(x0 + 40, 639, sign, 40, col, "mm", "Bold")
-        c.text(x0 + 76, 639, word, L, col, "lm")
+        label(x0 + 76, 639, word, L, col, "lm")
     return c.done()
 
 
