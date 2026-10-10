@@ -49,7 +49,7 @@ Resolve these early. Each one can change the plan.
 ## 4. Environment
 
 - **OS:** Windows (PowerShell).
-- **Toolchain:** Intel Quartus Prime Lite with Cyclone V device support (free). Use the Quartus version the core template README specifies.
+- **Toolchain:** Quartus Prime **Lite 25.1** (`C:\altera_lite\25.1std`) with Cyclone V support. Moved from 18.1 on 2026-10-10 after v0.4.1 built with 25.1 was verified on hardware. `tools\build.ps1` picks the version explicitly (default 25.1; `-Quartus <ver|path>` for another) and ignores PATH. Check that `quartus_sh --version` says **Lite Edition**: the Standard edition asks for a license.
 - **Simulation:** Icarus Verilog (and optionally GTKWave for waveforms). Every new module gets a testbench before it goes on hardware.
 - **Bitstream:** the Pocket loads a bit-reversed RBF (`.rbf_r`). Follow Analogue's "Packaging a Core" docs; agg23's utilities and other open cores include conversion scripts.
 - **Loading on hardware:** copy the packaged core to the SD card (Pocket "USB-Link" mode or card reader). JTAG debugging is optional and needs physical access to the connector on the bottom edge plus a USB-Blaster–compatible cable.

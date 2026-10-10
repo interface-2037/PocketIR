@@ -1,12 +1,13 @@
 # Full build: Quartus compile -> timing summary -> package for the SD card.
 # Usage (from the repo root):
-#   powershell -ExecutionPolicy Bypass -File tools\build.ps1                 # Quartus 18.1 (default)
-#   powershell -ExecutionPolicy Bypass -File tools\build.ps1 -Quartus 25.1   # another installed version
+#   powershell -ExecutionPolicy Bypass -File tools\build.ps1                 # Quartus 25.1 Lite (default)
+#   powershell -ExecutionPolicy Bypass -File tools\build.ps1 -Quartus 18.1   # another installed version
 #   powershell -ExecutionPolicy Bypass -File tools\build.ps1 -Quartus C:\path\to\quartus_sh.exe
 # The version is always explicit, so a newly installed Quartus never upgrades
 # the project by accident. PATH is ignored.
 
-param([string]$Quartus = '18.1')
+param([string]$Quartus = '25.1')
+$DefaultQuartus = '25.1'          # keep in sync with the param default above
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -45,7 +46,7 @@ if (Test-Path $sta) {
 } else { Write-Warning "No timing summary found at $sta" }
 
 Write-Host "`n== Packaging"
-# builds from a non-default Quartus get a tag so they never overwrite the 18.1 package
-$tag = if ($Quartus -eq '18.1') { '' } elseif (Test-Path $Quartus -PathType Leaf) { 'qcustom' } else { "q$Quartus" }
+# builds from a non-default Quartus get a tag so they never overwrite the main package
+$tag = if ($Quartus -eq $DefaultQuartus) { '' } elseif (Test-Path $Quartus -PathType Leaf) { 'qcustom' } else { "q$Quartus" }
 if ($tag) { python (Join-Path $root 'tools\package_core.py') --tag $tag } else { python (Join-Path $root 'tools\package_core.py') }
 if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
