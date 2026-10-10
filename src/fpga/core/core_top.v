@@ -225,16 +225,24 @@ input   wire    [15:0]  cont4_trig
     
 );
 
-// M1: blink the IR LED at 1 Hz (no carrier) to confirm we control it and
-// that 1 = LED on. Receiver stays disabled to save power.
-ir_blink #(
+// M1 diagnostic: d-pad / B select an IR drive mode (see ir_diag.v); the
+// screen colour shows the mode and pulses with the 1 Hz envelope.
+// Analogue: the IR LED is active high and must never be driven with DC --
+// every mode only gates a 38 kHz PWM carrier.
+wire [2:0] ir_diag_mode;
+wire       ir_diag_envelope;
+
+ir_diag #(
     .CLK_HZ   ( 74_250_000 ),
     .BLINK_HZ ( 1 )
-) ir_blink_m1 (
-    .clk   ( clk_74a ),
-    .blink ( port_ir_tx )
+) ir_diag_m1 (
+    .clk           ( clk_74a ),
+    .keys          ( cont1_key ),
+    .ir_tx         ( port_ir_tx ),
+    .ir_rx_disable ( port_ir_rx_disable ),
+    .mode          ( ir_diag_mode ),
+    .envelope      ( ir_diag_envelope )
 );
-assign port_ir_rx_disable = 1;
 
 // bridge endianness
 assign bridge_endian_little = 0;
@@ -546,10 +554,27 @@ assign video_hs = vidout_hs;
     reg [9:0]   square_x = 'd135;
     reg [9:0]   square_y = 'd95;
 
+// IR diagnostic mode/envelope cross from clk_74a into the video clock.
+// Both change rarely (button press, 1 Hz), so a 2-flop synchroniser per bit
+// is enough; a one-frame mixed value during a change is harmless.
+    reg [3:0]   diag_sync1, diag_sync2;
+    reg [23:0]  diag_rgb;
+always @(posedge clk_core_12288) begin
+    diag_sync1 <= {ir_diag_envelope, ir_diag_mode};
+    diag_sync2 <= diag_sync1;
+    case (diag_sync2[2:0])
+        3'd0:    diag_rgb <= diag_sync2[3] ? 24'h3060FF : 24'h0C1840;   // blue
+        3'd1:    diag_rgb <= diag_sync2[3] ? 24'h30FF30 : 24'h0C400C;   // green
+        3'd2:    diag_rgb <= diag_sync2[3] ? 24'hFFE020 : 24'h403808;   // yellow
+        3'd3:    diag_rgb <= diag_sync2[3] ? 24'hFF30FF : 24'h400C40;   // magenta
+        default: diag_rgb <= 24'h601010;                                // red (off)
+    endcase
+end
+
 always @(posedge clk_core_12288 or negedge reset_n) begin
 
     if(~reset_n) begin
-    
+
         x_count <= 0;
         y_count <= 0;
         
@@ -597,9 +622,8 @@ always @(posedge clk_core_12288 or negedge reset_n) begin
                 // data enable. this is the active region of the line
                 vidout_de <= 1;
                 
-                vidout_rgb[23:16] <= 8'd60;
-                vidout_rgb[15:8]  <= 8'd60;
-                vidout_rgb[7:0]   <= 8'd60;
+                // M1 diagnostic: colour = IR mode, bright while envelope on
+                vidout_rgb <= diag_rgb;
                 
             end 
         end

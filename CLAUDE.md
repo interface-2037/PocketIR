@@ -24,7 +24,7 @@ These come from `src/fpga/core/core_top.v` in `open-fpga/core-template`:
 
 | Signal | Direction | Notes |
 |---|---|---|
-| `port_ir_tx` | output | IR transmitter LED. Template ties it to `0` ("LED off") → assume **active-high** until proven otherwise. |
+| `port_ir_tx` | output | IR transmitter LED. **Active-high** (Analogue external-hardware docs). The LED runs near its max rated current: **never drive it with DC**, only PWM pulses with duty < 100% (always gate through `ir_carrier.v`). It shares the power LED's lightpipe, so IR comes out where the power LED is. |
 | `port_ir_rx` | input | IR receiver circuit output. Behavior (raw vs. demodulated, polarity) **unknown**. |
 | `port_ir_rx_disable` | output | Set to `1` to power down the receiver. Keep it `1` until the learning feature exists. |
 | `clk_74a`, `clk_74b` | input | 74.25 MHz main clocks. Treat as asynchronous to each other. |
@@ -97,7 +97,7 @@ Work **one milestone at a time**. Don't start the next until the human confirms 
 - **Done when:** the template's gray screen shows on the Pocket.
 
 ### M1 — Prove we control the LED
-- Drive `port_ir_tx` with a slow blink (~1 Hz) from a counter on `clk_74a`. Keep `port_ir_rx_disable = 1`.
+- Blink the LED ~1 Hz from a counter on `clk_74a`, but **as an envelope gating the 38 kHz carrier** (never DC, see section 2). Keep `port_ir_rx_disable = 1`. (M1 and M2 were merged after the DC-drive warning was found.)
 - **Done when:** the LED visibly blinks through a phone camera. This confirms polarity.
 
 ### M2 — 38 kHz carrier
