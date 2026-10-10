@@ -19,7 +19,8 @@ FONT = Path(__file__).parent / "fonts" / "Inter-Variable.ttf"
 SS = 4  # supersampling
 
 # colours
-BODY_TOP, BODY_BOT = (44, 45, 49), (28, 29, 32)
+BODY_TOP, BODY_BOT = (44, 45, 49), (28, 29, 32)   # 4:3 draft only (bands on hardware)
+BODY = (34, 35, 38)                                 # flat background
 BTN, BTN_HI, BTN_SH = (22, 23, 26), (58, 60, 66), (12, 12, 14)
 ENGRAVE = (70, 72, 78)
 LABEL, TITLE, DIM = (205, 206, 212), (236, 236, 240), (110, 112, 120)
@@ -27,8 +28,8 @@ ACC, ACC_DARK = (255, 200, 40), (60, 44, 0)
 
 
 class Canvas:
-    def __init__(self, w, h):
-        self.k = w / 640 * SS
+    def __init__(self, w, h, base_w=640):
+        self.k = w / base_w * SS
         self.img = Image.new("RGB", (w * SS, h * SS))
         self.d = ImageDraw.Draw(self.img)
         self.w, self.h = w, h
@@ -46,6 +47,9 @@ class Canvas:
         return self.fonts[key]
 
     # ------------------------------------------------------------ primitives
+    def flat(self):
+        self.d.rectangle([0, 0, self.img.width, self.img.height], fill=BODY)
+
     def gradient(self):
         H = self.img.height
         for y in range(H):
@@ -82,14 +86,16 @@ class Canvas:
             d.rounded_rectangle(s(*arms[pressed]), s(rad)[0], fill=ACC)
         # engraved arrows
         t = half_w * 0.45
-        tips = {"UP": [(cx, cy - arm + 10), (cx - t, cy - arm + 10 + t), (cx + t, cy - arm + 10 + t)],
-                "DOWN": [(cx, cy + arm - 10), (cx - t, cy + arm - 10 - t), (cx + t, cy + arm - 10 - t)],
-                "LEFT": [(cx - arm + 10, cy), (cx - arm + 10 + t, cy - t), (cx - arm + 10 + t, cy + t)],
-                "RIGHT": [(cx + arm - 10, cy), (cx + arm - 10 - t, cy - t), (cx + arm - 10 - t, cy + t)]}
+        n = arm * 0.13
+        tips = {"UP": [(cx, cy - arm + n), (cx - t, cy - arm + n + t), (cx + t, cy - arm + n + t)],
+                "DOWN": [(cx, cy + arm - n), (cx - t, cy + arm - n - t), (cx + t, cy + arm - n - t)],
+                "LEFT": [(cx - arm + n, cy), (cx - arm + n + t, cy - t), (cx - arm + n + t, cy + t)],
+                "RIGHT": [(cx + arm - n, cy), (cx + arm - n - t, cy - t), (cx + arm - n - t, cy + t)]}
         for name, pts in tips.items():
             d.polygon([tuple(s(*p)) for p in pts], fill=ACC_DARK if pressed == name else ENGRAVE)
         # centre dimple
-        d.ellipse(s(cx - 7, cy - 7, cx + 7, cy + 7), fill=(18, 19, 21))
+        e = half_w * 0.26
+        d.ellipse(s(cx - e, cy - e, cx + e, cy + e), fill=(18, 19, 21))
 
     def shoulder(self, x0, y0, x1, y1, pressed=False):
         d, s = self.d, self.s
@@ -109,7 +115,7 @@ class Canvas:
         return self.img.resize((self.w, self.h), Image.LANCZOS)
 
 
-def render(w, h, pressed=None, tx=None):
+def render_4x3(w, h, pressed=None, tx=None):
     """tx: TX lamp lit (default: lit whenever a button is pressed)."""
     c = Canvas(w, h)
     c.gradient()
@@ -155,15 +161,68 @@ def render(w, h, pressed=None, tx=None):
     return c.done()
 
 
+def render(w=800, h=720, pressed=None, tx=None):
+    """800x720 (10:9): exactly 2x into the Pocket's 1600x1440 panel.
+    tx: TX lamp lit (default: lit whenever a button is pressed)."""
+    c = Canvas(w, h, base_w=800)
+    c.flat()
+    lab = lambda f: ACC if pressed == f else LABEL
+    L = 22                                     # label size
+
+    # header: device + TX lamp
+    c.text(40, 58, "SONY STR-DH790", 30, TITLE, "lm", "Bold")
+    tx_on = (pressed is not None) if tx is None else tx
+    c.d.rounded_rectangle(c.s(682, 38, 760, 78), c.s(20)[0],
+                          outline=ACC if tx_on else DIM, width=c.s(3)[0])
+    c.text(710, 58, "TX", 20, ACC if tx_on else DIM, "mm", "Bold")
+    c.d.ellipse(c.s(733, 51, 747, 65), fill=ACC if tx_on else DIM)
+
+    # small buttons row (top of the grip): Start = POWER (left), home, Select = MUTE (right)
+    y = 176
+    c.circle_btn(330, y, 19, pressed == "POWER")
+    c.circle_btn(400, y, 19)
+    c.circle_btn(470, y, 19, pressed == "MUTE")
+    c.text(294, y, "POWER", L, lab("POWER"), "rm")
+    c.text(506, y, "MUTE", L, lab("MUTE"), "lm")
+
+    # face buttons (left in the grip)
+    fx, fy, off, r = 282, 404, 86, 36
+    for dx, dy, f in [(0, -off, "AMP MENU"), (-off, 0, "OPTIONS"), (off, 0, "ENTER"), (0, off, "BACK")]:
+        c.circle_btn(fx + dx, fy + dy, r, pressed == f)
+    c.text(fx, fy - off - r - 26, "AMP MENU", L, lab("AMP MENU"))
+    c.text(fx - off - r - 18, fy, "OPTIONS", L, lab("OPTIONS"), "rm")
+    c.text(fx + off + r + 18, fy, "ENTER", L, lab("ENTER"), "lm")
+    c.text(fx, fy + off + r + 28, "BACK", L, lab("BACK"))
+
+    # d-pad (right in the grip)
+    dx0 = 652
+    c.dpad(dx0, fy, 102, 35, pressed if pressed in ("UP", "DOWN", "LEFT", "RIGHT") else None)
+    c.text(dx0, fy + 102 + 30, "MENU", L, LABEL)
+
+    # shoulders (bottom edge of the grip): R1 left = VOLUME DOWN, L1 right = VOLUME UP
+    for x0, x1, f, sign, word in [(40, 380, "VOL-", MINUS, "VOLUME DOWN"), (420, 760, "VOL+", "+", "VOLUME UP")]:
+        on = pressed == f
+        c.shoulder(x0, 604, x1, 674, on)
+        col = ACC_DARK if on else LABEL
+        c.text(x0 + 40, 639, sign, 40, col, "mm", "Bold")
+        c.text(x0 + 76, 639, word, L, col, "lm")
+    return c.done()
+
+
+MINUS = chr(0x2212)
+
+
 def main():
     out = ROOT / "docs" / "ui"
     out.mkdir(parents=True, exist_ok=True)
-    for (w, h) in [(640, 480), (1600, 1200)]:
-        for state in [None, "ENTER", "VOL+", "UP"]:
-            tag = "idle" if state is None else state.lower().replace("+", "plus")
-            path = out / f"m5_hires_{w}x{h}_{tag}.png"
-            render(w, h, state).save(path)
-            print(path.relative_to(ROOT))
+    for state in [None, "ENTER", "VOL+", "UP"]:
+        tag = "idle" if state is None else state.lower().replace("+", "plus")
+        path = out / f"m5_800x720_{tag}.png"
+        render(800, 720, state).save(path)
+        print(path.relative_to(ROOT))
+        if state is None:   # as it lands on the 1600x1440 panel: exactly 2x
+            Image.open(path).resize((1600, 1440), Image.NEAREST).save(
+                out / "m5_800x720_idle_on_panel_1600x1440.png")
 
 
 if __name__ == "__main__":
