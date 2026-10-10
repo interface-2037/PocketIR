@@ -151,22 +151,42 @@ Work **one milestone at a time**. Don't start the next until the human confirms 
 - Highlight regions: key bit k → k+1 (k ≤ 9), Select 11, Start 12, TX lamp 13 (see `core_top.v` and `ui_rom.py`; keep them in sync with `ir_code_rom.v`).
 - Design review loop: render mockups and critique them before touching RTL (interface2037's request).
 
-### M6 — Multiple devices and protocols
-- Device selection menu (e.g. hold a button combo to open it).
-- Add protocols, each a separate encoder module behind a common interface:
-  - Samsung (38 kHz, NEC-like with 4.5 ms/4.5 ms leader)
-  - Sony SIRC (40 kHz, 12/15/20-bit)
-  - Philips RC5 (36 kHz, Manchester) and RC6
-- Carrier frequency comes from the selected protocol.
+### Universal-remote plan (decided 2026-10-10, replaces the original M6–M8)
+Goal: the whole code library lives inside the core (on-chip memory), with no SDRAM and no runtime SD loading.
 
-### M7 — Code database from SD card
-- Define a simple binary file format for device/code tables (document it in `docs/codes-format.md`).
-- Load it through an openFPGA data slot into on-chip memory or PSRAM.
-- Provide a small script (Python) that converts a human-readable list into that binary file.
+Measured with `tools/ir/measure/measure_*.py` (clone the databases first, then run with `python -I`), 12 functions, deduplicated, stored as parameters:
+- **Flipper-IRDB curated AV folders** (CC0 public domain): 1,087 devices, 918 code sets, about **78 KB**. This is the chosen source.
+- **IRDB:** about 40 KB more. Its licence requires opening an issue on its repo, including its notice, and supplying units on request, so add it only if interface2037 agrees.
+- Flipper's `_Converted_` folder is mostly raw captures, probably includes IRDB, and is not CC0-clean. Leave it out.
 
-### M8 (stretch) — Learning mode
-- Enable the receiver, capture `port_ir_rx` timings, and store/replay raw codes.
-- First investigate what `port_ir_rx` actually outputs (see Risks).
+Design constraints:
+- **12 functions per device:** POWER, VOL_UP, VOL_DOWN, MUTE, UP, DOWN, LEFT, RIGHT, OK, BACK, MENU, INPUT.
+- **Codes are parameters, not timings:** protocol id + address + command, with a per-button override when a button uses a different protocol or address. The Sony DH790 needs this: menu keys are at address 176, BACK/OPTIONS are 20-bit at address 272.
+- **Memory budget (on-chip ≈ 385 KB):** UI background ~40 KB + fonts ~20 KB + library ~80–120 KB.
+- **Video stays at 400×360,** with the pixel clock ≤ 25 MHz (see the M5 notes).
+
+### M6 — Protocol engine (microcoded) + protocol compiler
+- An FPGA engine (`ir/ir_engine.v`) turns {protocol id, address, command, toggle} into an IR envelope and carrier, from a small **protocol microcode ROM**. One engine covers all protocols; no per-protocol Verilog.
+- A PC tool (`tools/ir/`) holds protocol definitions (IRP-style) and compiles them to microcode. It also contains a Python reference encoder used as the test oracle.
+- Protocols: SIRC 12/15/20, NEC, NECext, Samsung32, RC5/RC5X, RC6, Kaseikyo, RCA, Pioneer, plus a **RAW** protocol (stored timing list) for raw database entries and later learned codes.
+- **Done when:** testbenches show the engine output exactly matches the Python reference for every protocol, the Sony envelopes are bit-identical to the old `ir_sirc_tx`, and on hardware all 12 STR-DH790 buttons work through the engine.
+
+### M7 — Built-in code library + device menu
+- A PC tool converts Flipper-IRDB (curated AV) into one compact ROM image: brand table, device types, code sets, and overrides.
+- On-Pocket menu: brand → device type → code set, so a set can be tried with POWER (classic universal-remote setup).
+- The selected device is remembered across sessions (save data slot).
+- **Done when:** a second real device is found in the menu and controlled.
+
+### M8 — Runtime labels on the fixed background
+- The background picture keeps the layout and buttons but drops the labels. A text layer draws the device name and the 12 labels at runtime from the library. Missing functions are dimmed.
+- **Done when:** labels change with the selected device, with mockups reviewed first (design-review rule).
+
+### M9 — Learning mode
+- Enable the receiver and capture `port_ir_rx` mark/space timings, which arrive demodulated (it reacted to a TV remote). Store them as RAW codes, assign them to buttons, and save them to SD.
+- **Done when:** a remote the Pocket has never seen can be captured and replayed.
+
+### M10 (optional) — External emitter
+- Drive an IR LED through the link port for room-range control. This needs a small hardware add-on.
 
 ---
 
