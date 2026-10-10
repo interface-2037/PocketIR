@@ -517,8 +517,8 @@ core_bridge_cmd icb (
 
 
 // video generation (M5)
-// 800x720 @ 60 Hz from a 41.04 MHz pixel clock: 900 x 760 total clocks per
-// frame = 684,000, x 60 = 41,040,000. 800x720 is exactly half the Pocket's
+// 800x720 @ 50 Hz from a 29.93 MHz pixel clock: 820 x 730 total clocks per
+// frame = 598,600, x 50 = 29,930,000 (41 MHz @ 60 Hz showed artifacts). 800x720 is exactly half the Pocket's
 // 1600x1440 panel, so it scales 2x with no bars. The picture is the remote UI from
 // tools/ui/ui_rom.py (run-length ROM + palette, see ui/ui_video.v).
 // video.json rotates it 180 degrees to match how the Pocket is held.

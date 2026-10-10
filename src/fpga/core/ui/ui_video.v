@@ -2,7 +2,8 @@
 // M5: 800x720 @ 60 Hz video for the remote UI (exactly 2x into the
 // Pocket's 1600x1440 panel).
 //
-// Timing: 900 x 760 total at 41.04 MHz = 60 Hz (same structure as
+// Timing: 820 x 730 total at 29.93 MHz = 50 Hz, minimal blanking (v0.3.1:
+// 41 MHz showed artifacts on hardware). Same structure as
 // the core template: VS pulse at x=0,y=0, HS pulse at x=3, DE in the active
 // window).
 //
@@ -21,7 +22,7 @@ module ui_video #(
     parameter RLE_FILE = "core/ui/ui_rle.hex",
     parameter PAL_FILE = "core/ui/ui_palette.hex"
 ) (
-    input  wire        clk,             // 41.04 MHz pixel clock
+    input  wire        clk,             // 29.93 MHz pixel clock
     input  wire        reset_n,
     input  wire [3:0]  active_region,   // 0 = none (already synchronised to clk)
     input  wire        tx_on,           // already synchronised to clk
@@ -35,8 +36,8 @@ module ui_video #(
 
 `include "ui_rle.vh"
 
-localparam H_TOTAL  = 900, H_BPORCH = 20, H_ACTIVE = 800;
-localparam V_TOTAL  = 760, V_BPORCH = 16, V_ACTIVE = 720;
+localparam H_TOTAL  = 820, H_BPORCH = 10, H_ACTIVE = 800;
+localparam V_TOTAL  = 730, V_BPORCH = 6,  V_ACTIVE = 720;
 localparam TX_REGION = 4'd13;
 localparam AW = $clog2(UI_RLE_WORDS);
 
