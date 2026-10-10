@@ -1,16 +1,31 @@
 # Full build: Quartus compile -> timing summary -> package for the SD card.
-# Usage (from the repo root):  powershell -ExecutionPolicy Bypass -File tools\build.ps1
+# Usage (from the repo root):
+#   powershell -ExecutionPolicy Bypass -File tools\build.ps1                 # Quartus 18.1 (default)
+#   powershell -ExecutionPolicy Bypass -File tools\build.ps1 -Quartus 25.1   # another installed version
+#   powershell -ExecutionPolicy Bypass -File tools\build.ps1 -Quartus C:\path\to\quartus_sh.exe
+# The version is always explicit, so a newly installed Quartus never upgrades
+# the project by accident. PATH is ignored.
+
+param([string]$Quartus = '18.1')
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $fpga = Join-Path $root 'src\fpga'
 
-# Find quartus_sh: PATH first, then default Lite install locations (newest first).
-$qsh = (Get-Command quartus_sh -ErrorAction SilentlyContinue).Source
-if (-not $qsh) {
-    $qsh = Get-ChildItem 'C:\altera_lite\*\quartus\bin64\quartus_sh.exe', 'C:\intelFPGA_lite\*\quartus\bin64\quartus_sh.exe' -ErrorAction SilentlyContinue |
-           Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-    if (-not $qsh) { Write-Error 'quartus_sh not found. Install Quartus Prime Lite or add quartus\bin64 to PATH.' }
+$installRoots = 'C:\intelFPGA_lite', 'C:\altera_lite', 'C:\intelFPGA', 'C:\altera'
+$installed = Get-ChildItem $installRoots -Directory -ErrorAction SilentlyContinue |
+             Where-Object { Test-Path (Join-Path $_.FullName 'quartus\bin64\quartus_sh.exe') }
+
+if (Test-Path $Quartus -PathType Leaf) {
+    $qsh = (Resolve-Path $Quartus).Path
+} else {
+    # version folders look like "18.1" or "25.1std"
+    $match = $installed | Where-Object { $_.Name -like "$Quartus*" } | Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $match) {
+        $list = if ($installed) { ($installed | ForEach-Object { "$($_.Name) ($($_.FullName))" }) -join ', ' } else { 'none' }
+        throw "Quartus $Quartus not found. Installed: $list. Use -Quartus <version> or a path to quartus_sh.exe."
+    }
+    $qsh = Join-Path $match.FullName 'quartus\bin64\quartus_sh.exe'
 }
 
 Write-Host "== Compiling with $qsh"
