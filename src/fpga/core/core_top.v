@@ -225,53 +225,25 @@ input   wire    [15:0]  cont4_trig
     
 );
 
-// M3: Sony SIRC power for the STR-DH790 receiver.
-//   Start  = SIRC-15, device 48, command 21 (power toggle)   screen green
-//   Select = SIRC-12, device 16, command 21 (older Sony amp)  screen blue
-// A tap sends 3 frames; holding keeps repeating every 45 ms.
-// Range test: L1 = 25%, Y = 33% (default), R1 = 50% carrier duty;
-// idle screen colour shows the duty (dark red / grey / dark yellow).
+// M4: Pocket buttons operate the Sony STR-DH790 (codes in ir/ir_code_rom.v).
+//   Start power, R1/L1 volume +/-, Select mute, d-pad menu, A enter,
+//   B return, X home, Y options. Tap = 3 frames, hold = repeat.
 // Analogue: the IR LED is active high and must never be driven with DC --
-// port_ir_tx only ever carries the 40 kHz PWM carrier. Receiver stays off
-// (verified: TX works with port_ir_rx_disable = 1).
-reg  [15:0] m3_keys   = 16'd0;
-reg         m3_sel12  = 1'b0;
-reg  [1:0]  m3_duty   = 2'd1;            // 0 = 25%, 1 = 33%, 2 = 50%
-wire        m3_key    = m3_keys[15] | m3_keys[14];
-wire        m3_envelope;
-wire        m3_busy;
+// port_ir_tx only ever carries the 40 kHz PWM carrier (50% duty: best range
+// in the M3 test). Receiver stays off (TX works with port_ir_rx_disable = 1).
+wire m4_busy;
 
-always @(posedge clk_74a) begin
-    m3_keys <= cont1_key[15:0];
-    if (!m3_busy) m3_sel12 <= m3_keys[14];
-    if (!m3_busy) begin
-        if      (m3_keys[8]) m3_duty <= 2'd0;   // L1
-        else if (m3_keys[7]) m3_duty <= 2'd1;   // Y
-        else if (m3_keys[9]) m3_duty <= 2'd2;   // R1
-    end
-end
-
-ir_sirc_tx #(
-    .CLK_HZ ( 74_250_000 )
-) ir_sirc_m3 (
-    .clk      ( clk_74a ),
-    .key      ( m3_key ),
-    .nbits    ( m3_keys[14] ? 5'd12   : 5'd15 ),
-    .address  ( m3_keys[14] ? 13'd16  : 13'd48 ),
-    .command  ( 7'd21 ),
-    .envelope ( m3_envelope ),
-    .busy     ( m3_busy )
+ir_remote #(
+    .CLK_HZ   ( 74_250_000 ),
+    .DUTY_PCT ( 50 )
+) ir_remote_m4 (
+    .clk        ( clk_74a ),
+    .keys       ( cont1_key[15:0] ),
+    .ir_tx      ( port_ir_tx ),
+    .envelope   ( ),
+    .busy       ( m4_busy ),
+    .active_idx ( )
 );
-
-wire c40_25, c40_33, c40_50;
-ir_carrier #(.CLK_HZ(74_250_000), .CARRIER_HZ(40_000), .DUTY_PCT(25)) ir_carrier_40k_25 (.clk(clk_74a), .en(m3_envelope), .out(c40_25));
-ir_carrier #(.CLK_HZ(74_250_000), .CARRIER_HZ(40_000), .DUTY_PCT(33)) ir_carrier_40k_33 (.clk(clk_74a), .en(m3_envelope), .out(c40_33));
-ir_carrier #(.CLK_HZ(74_250_000), .CARRIER_HZ(40_000), .DUTY_PCT(50)) ir_carrier_40k_50 (.clk(clk_74a), .en(m3_envelope), .out(c40_50));
-
-reg m3_tx = 1'b0;
-always @(posedge clk_74a)
-    m3_tx <= (m3_duty == 2'd0) ? c40_25 : (m3_duty == 2'd2) ? c40_50 : c40_33;
-assign port_ir_tx = m3_tx;
 assign port_ir_rx_disable = 1;
 
 // bridge endianness
@@ -584,18 +556,14 @@ assign video_hs = vidout_hs;
     reg [9:0]   square_x = 'd135;
     reg [9:0]   square_y = 'd95;
 
-// M3 sending status crosses from clk_74a into the video clock. It changes at
-// most every few ms, so a 2-flop synchroniser per bit is enough.
-    reg [3:0]   m3_sync1, m3_sync2;
-    reg [23:0]  m3_rgb;
+// M4 sending status crosses from clk_74a into the video clock. It changes at
+// most every few ms, so a 2-flop synchroniser is enough.
+    reg         m4_sync1, m4_sync2;
+    reg [23:0]  m4_rgb;
 always @(posedge clk_core_12288) begin
-    m3_sync1 <= {m3_duty, m3_sel12, m3_busy};
-    m3_sync2 <= m3_sync1;
-    if (!m3_sync2[0])     m3_rgb <= (m3_sync2[3:2] == 2'd0) ? 24'h501818 :   // idle 25%: dark red
-                                    (m3_sync2[3:2] == 2'd2) ? 24'h504818 :   // idle 50%: dark yellow
-                                                              24'h3C3C3C;    // idle 33%: grey
-    else if (m3_sync2[1]) m3_rgb <= 24'h3060FF;   // sending SIRC-12: blue
-    else                  m3_rgb <= 24'h30FF30;   // sending SIRC-15: green
+    m4_sync1 <= m4_busy;
+    m4_sync2 <= m4_sync1;
+    m4_rgb   <= m4_sync2 ? 24'h30FF30 : 24'h3C3C3C;   // green sending, grey idle
 end
 
 always @(posedge clk_core_12288 or negedge reset_n) begin
@@ -649,8 +617,8 @@ always @(posedge clk_core_12288 or negedge reset_n) begin
                 // data enable. this is the active region of the line
                 vidout_de <= 1;
                 
-                // M3: grey idle, green/blue while sending
-                vidout_rgb <= m3_rgb;
+                // M4: grey idle, green while sending
+                vidout_rgb <= m4_rgb;
                 
             end 
         end

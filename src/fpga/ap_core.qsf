@@ -744,6 +744,8 @@ set_global_assignment -name VERILOG_FILE core/ir/ir_blink.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_carrier.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_diag.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_sirc_tx.v
+set_global_assignment -name VERILOG_FILE core/ir/ir_code_rom.v
+set_global_assignment -name VERILOG_FILE core/ir/ir_remote.v
 set_global_assignment -name SDC_FILE core/core_constraints.sdc
 set_global_assignment -name SIGNALTAP_FILE core/stp1.stp
 set_global_assignment -name QIP_FILE core/mf_pllbase.qip
