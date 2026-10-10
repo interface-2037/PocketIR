@@ -1,6 +1,6 @@
 // tb_ui_video.v
-// Runs ui_video for two frames and compares every active pixel with the
-// frames tools/ui/ui_rom.py expects: idle, then ENTER pressed + TX lit.
+// Runs ui_video (picture + text layer) for two frames and compares every
+// active pixel with the frames tools/ui/ui_rom.py + ui_text.py expect: idle, then ENTER pressed + TX lit.
 // Also checks frame geometry (active and total sizes from ui_rle.vh) and that
 // the RLE stream never runs dry. Writes the captured frames to sim/out/ for
 // viewing (tools/ui/frame_to_png.py). Prints PASS or FAIL.
@@ -19,6 +19,9 @@ localparam REGION_TX    = 4'd13;
 
 reg clk = 0;
 always #(HALF_NS) clk = ~clk;
+reg clk_sys = 0;
+always #6.734 clk_sys = ~clk_sys;      // 74.25 MHz (text layer renderer)
+reg [3:0] region_sys = 0;
 
 reg  [3:0]  region = 0;
 reg         tx     = 0;
@@ -27,9 +30,17 @@ wire        de, hs, vs, skip, underflow;
 
 ui_video #(
     .RLE_FILE("src/fpga/core/ui/ui_rle.hex"),
-    .PAL_FILE("src/fpga/core/ui/ui_palette.hex")
+    .PAL_FILE("src/fpga/core/ui/ui_palette.hex"),
+    .FONT_SMALL_FILE("src/fpga/core/ui/font_small.bin"),
+    .FONT_BIG_FILE("src/fpga/core/ui/font_big.bin"),
+    .FONT_ADV_FILE("src/fpga/core/ui/font_adv.bin"),
+    .SLOTS_FILE("src/fpga/core/ui/text_slots.hex"),
+    .STR_FILE("src/fpga/core/ui/text_str.hex")
 ) dut (
     .clk(clk), .reset_n(1'b1), .active_region(region), .tx_on(tx),
+    .clk_sys(clk_sys), .active_region_sys(region_sys),
+    .slot_we(1'b0), .slot_waddr(5'd0), .slot_wdata(32'd0),
+    .str_we(1'b0), .str_waddr(10'd0), .str_wdata(8'd0),
     .rgb(rgb), .de(de), .hs(hs), .vs(vs), .skip(skip), .underflow(underflow));
 
 reg [23:0] exp_idle  [0:N-1];
@@ -93,6 +104,7 @@ initial begin
     @(posedge vs);                  // let the first partial frame pass
     run_frame(0, fd0);              // starts at the next VS
     region = REGION_ENTER; tx = 1;  // change during VS (blanking)
+    region_sys = REGION_ENTER;       // text layer: ENTER label lit
     run_frame(1, fd1);
     $fclose(fd0); $fclose(fd1);
 

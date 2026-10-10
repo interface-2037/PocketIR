@@ -20,12 +20,26 @@
 
 module ui_video #(
     parameter RLE_FILE = "core/ui/ui_rle.hex",
-    parameter PAL_FILE = "core/ui/ui_palette.hex"
+    parameter PAL_FILE = "core/ui/ui_palette.hex",
+    parameter FONT_SMALL_FILE = "core/ui/font_small.bin",
+    parameter FONT_BIG_FILE   = "core/ui/font_big.bin",
+    parameter FONT_ADV_FILE   = "core/ui/font_adv.bin",
+    parameter SLOTS_FILE      = "core/ui/text_slots.hex",
+    parameter STR_FILE        = "core/ui/text_str.hex"
 ) (
     input  wire        clk,             // UI_PIXEL_HZ pixel clock
     input  wire        reset_n,
     input  wire [3:0]  active_region,   // 0 = none (already synchronised to clk)
     input  wire        tx_on,           // already synchronised to clk
+    // text layer (ui_text.v), clk_sys domain
+    input  wire        clk_sys,
+    input  wire [3:0]  active_region_sys,
+    input  wire        slot_we,
+    input  wire [4:0]  slot_waddr,
+    input  wire [31:0] slot_wdata,
+    input  wire        str_we,
+    input  wire [9:0]  str_waddr,
+    input  wire [7:0]  str_wdata,
     output reg  [23:0] rgb = 24'd0,
     output reg         de  = 1'b0,
     output reg         hs  = 1'b0,
@@ -126,6 +140,45 @@ wire       cur_lit    = (cur_region != 0) &&
 
 reg [7:0]  idx1 = 8'd0;
 reg [23:0] rgb2 = 24'd0;
+
+// ------------------------------------------------------------- text layer
+// Line request: at x = 0 of every line, ask for the visible line shown next.
+reg        req_toggle = 1'b0;
+reg [9:0]  req_line = 10'd0;
+always @(posedge clk) if (x == 0) begin
+    req_toggle <= ~req_toggle;
+    req_line   <= y - V_BPORCH + 1'b1;
+end
+wire [9:0] vy = y - V_BPORCH;
+wire [8:0] vx = x - H_BPORCH;
+wire [7:0] text1;                         // {colour, alpha}: pixel t, valid at t+1
+reg  [7:0] text2 = 8'd0;                  // aligned with rgb2 (t+2)
+
+ui_text #(
+    .FONT_SMALL_FILE(FONT_SMALL_FILE), .FONT_BIG_FILE(FONT_BIG_FILE),
+    .FONT_ADV_FILE(FONT_ADV_FILE), .SLOTS_FILE(SLOTS_FILE), .STR_FILE(STR_FILE)
+) text (
+    .clk_sys(clk_sys), .active_region(active_region_sys),
+    .slot_we(slot_we), .slot_waddr(slot_waddr), .slot_wdata(slot_wdata),
+    .str_we(str_we), .str_waddr(str_waddr), .str_wdata(str_wdata),
+    .clk_vid(clk), .vid_req_toggle(req_toggle), .vid_req_line(req_line),
+    .vid_bank(vy[0]), .vid_x(vx), .vid_text(text1));
+
+`include "ui_text.vh"
+reg [23:0] fg;
+always @(*) case (text2[7:5])
+    3'd0: fg = TXT_COL0; 3'd1: fg = TXT_COL1; 3'd2: fg = TXT_COL2;
+    3'd3: fg = TXT_COL3; 3'd4: fg = TXT_COL4; default: fg = TXT_COL5;
+endcase
+
+// pixel = (background * (16 - a) + colour * a) >> 4  (a = 0..16), as ui_text.py
+function [7:0] mix(input [7:0] b, input [7:0] c, input [4:0] a);
+    reg [12:0] sum;
+begin
+    sum = b * (5'd16 - a) + c * a;
+    mix = sum[11:4];
+end
+endfunction
 reg        de1 = 1'b0, de2 = 1'b0, hs1 = 1'b0, hs2 = 1'b0, vs1 = 1'b0, vs2 = 1'b0;
 
 always @(posedge clk) begin
@@ -134,7 +187,10 @@ always @(posedge clk) begin
     de1 <= act0; de2 <= de1; de <= de2;
     hs1 <= hs0;  hs2 <= hs1; hs <= hs2;
     vs1 <= vs0;  vs2 <= vs1; vs <= vs2;
-    rgb <= de2 ? rgb2 : 24'd0;
+    text2 <= text1;
+    rgb <= de2 ? {mix(rgb2[23:16], fg[23:16], text2[4:0]),
+                  mix(rgb2[15:8],  fg[15:8],  text2[4:0]),
+                  mix(rgb2[7:0],   fg[7:0],   text2[4:0])} : 24'd0;
 end
 
 endmodule
