@@ -24,8 +24,8 @@ These come from `src/fpga/core/core_top.v` in `open-fpga/core-template`:
 
 | Signal | Direction | Notes |
 |---|---|---|
-| `port_ir_tx` | output | IR transmitter LED. **Active-high** (Analogue external-hardware docs). The LED runs near its max rated current: **never drive it with DC**, only PWM pulses with duty < 100% (always gate through `ir_carrier.v`). It shares the power LED's lightpipe, so IR comes out where the power LED is. |
-| `port_ir_rx` | input | IR receiver circuit output. Behavior (raw vs. demodulated, polarity) **unknown**. |
+| `port_ir_tx` | output | IR transmitter LED. **Active-high** (Analogue external-hardware docs). The LED runs near its max rated current: **never drive it with DC**, only PWM pulses with duty < 100% (always gate through `ir_carrier.v`). It shares the power LED's lightpipe, so IR comes out where the power LED is (**verified on hardware v0.0.5**: 38 kHz carrier gated at 1 Hz visibly pulses the power LED on a phone camera; the dark window next to it shows nothing). |
+| `port_ir_rx` | input | IR receiver circuit output. **Verified on hardware (v0.0.5):** reacts to a TV remote when `port_ir_rx_disable = 0`. Raw vs. demodulated and polarity still **unknown**. Does *not* pick up the Pocket's own LED (no self-echo), so it can't be used as a TX self-test. |
 | `port_ir_rx_disable` | output | Set to `1` to power down the receiver. Keep it `1` until the learning feature exists. |
 | `clk_74a`, `clk_74b` | input | 74.25 MHz main clocks. Treat as asynchronous to each other. |
 | `cont1_key[31:0]` | input | Button bitmap: [0] up, [1] down, [2] left, [3] right, [4] A, [5] B, [6] X, [7] Y, [8] L1, [9] R1, [14] select, [15] start. Synchronous to `clk_74a`. |
