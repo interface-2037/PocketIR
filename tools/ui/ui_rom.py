@@ -18,7 +18,7 @@ Outputs (build/ui_expected/, for the testbench):
 Region ids: Pocket key bit k -> k+1 for k <= 9, Select(14) -> 11, Start(15) -> 12,
 TX lamp -> 13. Function -> key bit matches src/fpga/core/ir/ir_code_rom.v.
 
-Usage:  python tools/ui/ui_rom.py [WIDTH HEIGHT]     (default 800 720; 10:9 layout)
+Usage:  python tools/ui/ui_rom.py [WIDTH HEIGHT]     (default 400 360; 10:9 layout)
 """
 
 import re
@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import ui_hires  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-W, H = 800, 720
+W, H = 400, 360      # exact 4x into the 1600x1440 panel (see CLAUDE.md M5 notes)
 FPS = 60
 H_BLANK, V_BLANK = 20, 10      # minimal blanking: HS at x=3, DE from x=10, 6 lines before
 

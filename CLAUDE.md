@@ -140,8 +140,10 @@ Work **one milestone at a time**. Don't start the next until the human confirms 
 - **Done when:** the UI shows the current device and button map, and highlights while sending.
 
 ### M5 implementation notes (v0.2.0)
-- Video is **800×720 @ 60 Hz** (v0.3.0): exactly 2× into the 1600×1440 panel. The PLL outputs 0/1 are 41.04 MHz, with 900×760 total timing. `video.json` is 800×720, aspect 10:9, rotation 180. The background is flat, because a gradient banded on hardware (v0.2.0, 640×480, also didn't fill the screen).
-- Picture pipeline: edit `tools/ui/ui_hires.py` (the design), then run `python tools/ui/ui_rom.py`. That regenerates `src/fpga/core/ui/ui_rle.hex`, `ui_palette.hex` and `ui_rle.vh` (RLE ROM + 256-colour palette + per-pixel highlight regions), plus `build/ui_expected/` for `sim/tb_ui_video.v`. Rebuild afterwards.
+- Video is **400×360 @ 60 Hz** (v0.4.0, 9.324 MHz, 420×370 total): exactly 4× into the 1600×1440 panel, so it fills the screen with square pixels. `video.json` is 10:9, rotation 180.
+- **Hardware finding:** with this detailed, anti-aliased picture, the Pocket's scaler corrupts larger frames: streaks, striped edges, broken lines. 800×720 corrupted at 41 MHz and 30 MHz, with rotation 180 and 0. 720×648 corrupted. 640×480 and 400×360 were clean. Don't go above 640×480 without a new hardware test.
+- The background must stay flat. A 1-level gradient banded visibly on the panel.
+- Picture pipeline: edit `tools/ui/ui_hires.py` (the design), then run `python tools/ui/ui_rom.py [W H]`. It also sets the timing in `ui_rle.vh`, `video.json` and the PLL. That regenerates `src/fpga/core/ui/ui_rle.hex`, `ui_palette.hex` and `ui_rle.vh` (RLE ROM + 256-colour palette + per-pixel highlight regions), plus `build/ui_expected/` for `sim/tb_ui_video.v`. Rebuild afterwards.
 - Highlight regions: key bit k → k+1 (k ≤ 9), Select 11, Start 12, TX lamp 13 (see `core_top.v` and `ui_rom.py`; keep them in sync with `ir_code_rom.v`).
 - Design review loop: render mockups and critique them before touching RTL (interface2037's request).
 
