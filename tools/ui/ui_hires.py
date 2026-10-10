@@ -28,20 +28,27 @@ ACC, ACC_DARK = (255, 200, 40), (60, 44, 0)
 
 
 class Canvas:
-    def __init__(self, w, h, base_w=640):
+    """Shapes are drawn at SS x and downsampled (smooth curves). With
+    native_text, text is queued and drawn after the downsample at the final
+    resolution, so FreeType hints glyphs to the real pixel grid (crisp)."""
+
+    def __init__(self, w, h, base_w=640, native_text=False):
         self.k = w / base_w * SS
         self.img = Image.new("RGB", (w * SS, h * SS))
         self.d = ImageDraw.Draw(self.img)
         self.w, self.h = w, h
         self.fonts = {}
+        self.native_text = native_text
+        self.texts = []
 
     def s(self, *v):
         return [round(x * self.k) for x in v]
 
-    def font(self, size, weight="SemiBold"):
-        key = (size, weight)
+    def font(self, size, weight="SemiBold", scale=None):
+        px = round(size * (self.k if scale is None else scale))
+        key = (px, weight)
         if key not in self.fonts:
-            f = ImageFont.truetype(str(FONT), round(size * self.k))
+            f = ImageFont.truetype(str(FONT), px)
             f.set_variation_by_name(weight)
             self.fonts[key] = f
         return self.fonts[key]
@@ -109,10 +116,20 @@ class Canvas:
             d.rounded_rectangle(s(x0, y0 + 2, x1, y1), r, fill=BTN)
 
     def text(self, x, y, txt, size, colour, anchor="mm", weight="SemiBold"):
-        self.d.text(tuple(self.s(x, y)), txt, font=self.font(size, weight), fill=colour, anchor=anchor)
+        if self.native_text:
+            self.texts.append((x, y, txt, size, colour, anchor, weight))
+        else:
+            self.d.text(tuple(self.s(x, y)), txt, font=self.font(size, weight), fill=colour, anchor=anchor)
 
     def done(self):
-        return self.img.resize((self.w, self.h), Image.LANCZOS)
+        out = self.img.resize((self.w, self.h), Image.LANCZOS)
+        if self.texts:
+            kn = self.k / SS                       # base units -> final pixels
+            d = ImageDraw.Draw(out)
+            for x, y, txt, size, colour, anchor, weight in self.texts:
+                d.text((round(x * kn), round(y * kn)), txt,
+                       font=self.font(size, weight, scale=kn), fill=colour, anchor=anchor)
+        return out
 
 
 def render_4x3(w, h, pressed=None, tx=None):
@@ -164,7 +181,7 @@ def render_4x3(w, h, pressed=None, tx=None):
 def render(w=800, h=720, pressed=None, tx=None):
     """800x720 (10:9): exactly 2x into the Pocket's 1600x1440 panel.
     tx: TX lamp lit (default: lit whenever a button is pressed)."""
-    c = Canvas(w, h, base_w=800)
+    c = Canvas(w, h, base_w=800, native_text=True)
     c.flat()
     lab = lambda f: ACC if pressed == f else LABEL
     L = 22                                     # label size
