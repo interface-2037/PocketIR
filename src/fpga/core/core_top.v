@@ -225,27 +225,46 @@ input   wire    [15:0]  cont4_trig
     
 );
 
-// M1 diagnostic: d-pad / B select an IR drive mode (see ir_diag.v); the
-// screen colour shows the mode and pulses with the 1 Hz envelope.
+// M3: Sony SIRC power for the STR-DH790 receiver.
+//   Start  = SIRC-15, device 48, command 21 (power toggle)   screen green
+//   Select = SIRC-12, device 16, command 21 (older Sony amp)  screen blue
+// A tap sends 3 frames; holding keeps repeating every 45 ms.
 // Analogue: the IR LED is active high and must never be driven with DC --
-// every mode only gates a 38 kHz PWM carrier.
-wire [2:0] ir_diag_mode;
-wire       ir_diag_envelope;
-wire       ir_diag_rx_active;
+// port_ir_tx only ever carries the 40 kHz PWM carrier. Receiver stays off
+// (verified: TX works with port_ir_rx_disable = 1).
+reg  [15:0] m3_keys   = 16'd0;
+reg         m3_sel12  = 1'b0;
+wire        m3_key    = m3_keys[15] | m3_keys[14];
+wire        m3_envelope;
+wire        m3_busy;
 
-ir_diag #(
-    .CLK_HZ   ( 74_250_000 ),
-    .BLINK_HZ ( 1 )
-) ir_diag_m1 (
-    .clk           ( clk_74a ),
-    .keys          ( cont1_key ),
-    .ir_rx         ( port_ir_rx ),
-    .ir_tx         ( port_ir_tx ),
-    .ir_rx_disable ( port_ir_rx_disable ),
-    .mode          ( ir_diag_mode ),
-    .envelope      ( ir_diag_envelope ),
-    .rx_active     ( ir_diag_rx_active )
+always @(posedge clk_74a) begin
+    m3_keys <= cont1_key[15:0];
+    if (!m3_busy) m3_sel12 <= m3_keys[14];
+end
+
+ir_sirc_tx #(
+    .CLK_HZ ( 74_250_000 )
+) ir_sirc_m3 (
+    .clk      ( clk_74a ),
+    .key      ( m3_key ),
+    .nbits    ( m3_keys[14] ? 5'd12   : 5'd15 ),
+    .address  ( m3_keys[14] ? 13'd16  : 13'd48 ),
+    .command  ( 7'd21 ),
+    .envelope ( m3_envelope ),
+    .busy     ( m3_busy )
 );
+
+ir_carrier #(
+    .CLK_HZ     ( 74_250_000 ),
+    .CARRIER_HZ ( 40_000 ),
+    .DUTY_PCT   ( 33 )
+) ir_carrier_40k (
+    .clk ( clk_74a ),
+    .en  ( m3_envelope ),
+    .out ( port_ir_tx )
+);
+assign port_ir_rx_disable = 1;
 
 // bridge endianness
 assign bridge_endian_little = 0;
@@ -557,22 +576,16 @@ assign video_hs = vidout_hs;
     reg [9:0]   square_x = 'd135;
     reg [9:0]   square_y = 'd95;
 
-// IR diagnostic mode/envelope/rx_active cross from clk_74a into the video clock.
-// Both change rarely (button press, 1 Hz), so a 2-flop synchroniser per bit
-// is enough; a one-frame mixed value during a change is harmless.
-    reg [4:0]   diag_sync1, diag_sync2;
-    reg [23:0]  diag_rgb;
+// M3 sending status crosses from clk_74a into the video clock. It changes at
+// most every few ms, so a 2-flop synchroniser per bit is enough.
+    reg [1:0]   m3_sync1, m3_sync2;
+    reg [23:0]  m3_rgb;
 always @(posedge clk_core_12288) begin
-    diag_sync1 <= {ir_diag_rx_active, ir_diag_envelope, ir_diag_mode};
-    diag_sync2 <= diag_sync1;
-    case (diag_sync2[2:0])
-        3'd0:    diag_rgb <= diag_sync2[3] ? 24'h3060FF : 24'h0C1840;   // blue
-        3'd1:    diag_rgb <= diag_sync2[3] ? 24'h30FF30 : 24'h0C400C;   // green
-        3'd2:    diag_rgb <= diag_sync2[3] ? 24'hFFE020 : 24'h403808;   // yellow
-        3'd3:    diag_rgb <= diag_sync2[3] ? 24'hFF30FF : 24'h400C40;   // magenta
-        3'd4:    diag_rgb <= 24'h601010;                                // red (off)
-        default: diag_rgb <= 24'h404040;                                // grey (rx test)
-    endcase
+    m3_sync1 <= {m3_sel12, m3_busy};
+    m3_sync2 <= m3_sync1;
+    if (!m3_sync2[0])     m3_rgb <= 24'h3C3C3C;   // idle: grey
+    else if (m3_sync2[1]) m3_rgb <= 24'h3060FF;   // sending SIRC-12: blue
+    else                  m3_rgb <= 24'h30FF30;   // sending SIRC-15: green
 end
 
 always @(posedge clk_core_12288 or negedge reset_n) begin
@@ -626,12 +639,8 @@ always @(posedge clk_core_12288 or negedge reset_n) begin
                 // data enable. this is the active region of the line
                 vidout_de <= 1;
                 
-                // M1 diagnostic: colour = IR mode, bright while envelope on
-                vidout_rgb <= diag_rgb;
-                // white box in the centre while the IR receiver sees activity
-                if (diag_sync2[4] && visible_x >= 120 && visible_x < 200 &&
-                                     visible_y >= 80  && visible_y < 160)
-                    vidout_rgb <= 24'hFFFFFF;
+                // M3: grey idle, green/blue while sending
+                vidout_rgb <= m3_rgb;
                 
             end 
         end
