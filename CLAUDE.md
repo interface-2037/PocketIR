@@ -139,6 +139,12 @@ Work **one milestone at a time**. Don't start the next until the human confirms 
 - Note: crossing from `clk_74a` (input/IR) to the 12.288 MHz video clock needs proper synchronization.
 - **Done when:** the UI shows the current device and button map, and highlights while sending.
 
+### M5 implementation notes (v0.2.0)
+- Video is now **640×480 @ 60 Hz**. The PLL outputs 0/1 were retuned to 24.576 MHz, with 800×512 total timing. `video.json` is 640×480, rotation 180.
+- Picture pipeline: edit `tools/ui/ui_hires.py` (the design), then run `python tools/ui/ui_rom.py`. That regenerates `src/fpga/core/ui/ui_rle.hex`, `ui_palette.hex` and `ui_rle.vh` (RLE ROM + 256-colour palette + per-pixel highlight regions), plus `build/ui_expected/` for `sim/tb_ui_video.v`. Rebuild afterwards.
+- Highlight regions: key bit k → k+1 (k ≤ 9), Select 11, Start 12, TX lamp 13 (see `core_top.v` and `ui_rom.py`; keep them in sync with `ir_code_rom.v`).
+- Design review loop: render mockups and critique them before touching RTL (interface2037's request).
+
 ### M6 — Multiple devices and protocols
 - Device selection menu (e.g. hold a button combo to open it).
 - Add protocols, each a separate encoder module behind a common interface:

@@ -234,7 +234,8 @@ input   wire    [15:0]  cont4_trig
 // Analogue: the IR LED is active high and must never be driven with DC --
 // port_ir_tx only ever carries the 40 kHz PWM carrier (50% duty: best range
 // in the M3 test). Receiver stays off (TX works with port_ir_rx_disable = 1).
-wire m4_busy;
+wire       m4_busy;
+wire [3:0] m4_active_idx;
 
 ir_remote #(
     .CLK_HZ   ( 74_250_000 ),
@@ -245,7 +246,7 @@ ir_remote #(
     .ir_tx      ( port_ir_tx ),
     .envelope   ( ),
     .busy       ( m4_busy ),
-    .active_idx ( )
+    .active_idx ( m4_active_idx )
 );
 assign port_ir_rx_disable = 1;
 
@@ -515,122 +516,52 @@ core_bridge_cmd icb (
 
 
 
-// video generation
-// ~12,288,000 hz pixel clock
-//
-// we want our video mode of 320x240 @ 60hz, this results in 204800 clocks per frame
-// we need to add hblank and vblank times to this, so there will be a nondisplay area. 
-// it can be thought of as a border around the visible area.
-// to make numbers simple, we can have 400 total clocks per line, and 320 visible.
-// dividing 204800 by 400 results in 512 total lines per frame, and 240 visible.
-// this pixel clock is fairly high for the relatively low resolution, but that's fine.
-// PLL output has a minimum output frequency anyway.
+// video generation (M5)
+// 640x480 @ 60 Hz from a 24.576 MHz pixel clock: 800 x 512 total clocks per
+// frame = 409,600, x 60 = 24,576,000. The picture is the remote UI from
+// tools/ui/ui_rom.py (run-length ROM + palette, see ui/ui_video.v).
+// video.json rotates it 180 degrees to match how the Pocket is held.
 
+// Highlight state crosses from clk_74a into the video clock. region is held
+// steady for a whole IR frame burst (milliseconds), so a 2-flop synchroniser
+// per bit is enough; a one-pixel mixed value during a change is harmless.
+// Region ids match tools/ui/ui_rom.py: key bit k -> k+1 (k <= 9), Select 11,
+// Start 12; TX lamp is region 13 (driven by tx_on).
+reg [3:0] ui_region_74 = 4'd0;
+always @(posedge clk_74a)
+    ui_region_74 <= !m4_busy           ? 4'd0 :
+                    m4_active_idx <= 9 ? m4_active_idx + 4'd1 :
+                    m4_active_idx == 14 ? 4'd11 : 4'd12;
 
-assign video_rgb_clock = clk_core_12288;
-assign video_rgb_clock_90 = clk_core_12288_90deg;
-assign video_rgb = vidout_rgb;
-assign video_de = vidout_de;
+reg [4:0] ui_sync1 = 5'd0, ui_sync2 = 5'd0;
+always @(posedge clk_video) begin
+    ui_sync1 <= {m4_busy, ui_region_74};
+    ui_sync2 <= ui_sync1;
+end
+
+wire [23:0] vidout_rgb;
+wire        vidout_de, vidout_skip, vidout_vs, vidout_hs;
+
+ui_video ui_video_m5 (
+    .clk           ( clk_video ),
+    .reset_n       ( reset_n ),
+    .active_region ( ui_sync2[3:0] ),
+    .tx_on         ( ui_sync2[4] ),
+    .rgb           ( vidout_rgb ),
+    .de            ( vidout_de ),
+    .hs            ( vidout_hs ),
+    .vs            ( vidout_vs ),
+    .skip          ( vidout_skip ),
+    .underflow     ( )
+);
+
+assign video_rgb_clock    = clk_video;
+assign video_rgb_clock_90 = clk_video_90deg;
+assign video_rgb  = vidout_rgb;
+assign video_de   = vidout_de;
 assign video_skip = vidout_skip;
-assign video_vs = vidout_vs;
-assign video_hs = vidout_hs;
-
-    localparam  VID_V_BPORCH = 'd10;
-    localparam  VID_V_ACTIVE = 'd240;
-    localparam  VID_V_TOTAL = 'd512;
-    localparam  VID_H_BPORCH = 'd10;
-    localparam  VID_H_ACTIVE = 'd320;
-    localparam  VID_H_TOTAL = 'd400;
-
-    reg [15:0]  frame_count;
-    
-    reg [9:0]   x_count;
-    reg [9:0]   y_count;
-    
-    wire [9:0]  visible_x = x_count - VID_H_BPORCH;
-    wire [9:0]  visible_y = y_count - VID_V_BPORCH;
-
-    reg [23:0]  vidout_rgb;
-    reg         vidout_de, vidout_de_1;
-    reg         vidout_skip;
-    reg         vidout_vs;
-    reg         vidout_hs, vidout_hs_1;
-    
-    reg [9:0]   square_x = 'd135;
-    reg [9:0]   square_y = 'd95;
-
-// M4 sending status crosses from clk_74a into the video clock. It changes at
-// most every few ms, so a 2-flop synchroniser is enough.
-    reg         m4_sync1, m4_sync2;
-    reg [23:0]  m4_rgb;
-always @(posedge clk_core_12288) begin
-    m4_sync1 <= m4_busy;
-    m4_sync2 <= m4_sync1;
-    m4_rgb   <= m4_sync2 ? 24'h30FF30 : 24'h3C3C3C;   // green sending, grey idle
-end
-
-always @(posedge clk_core_12288 or negedge reset_n) begin
-
-    if(~reset_n) begin
-
-        x_count <= 0;
-        y_count <= 0;
-        
-    end else begin
-        vidout_de <= 0;
-        vidout_skip <= 0;
-        vidout_vs <= 0;
-        vidout_hs <= 0;
-        
-        vidout_hs_1 <= vidout_hs;
-        vidout_de_1 <= vidout_de;
-        
-        // x and y counters
-        x_count <= x_count + 1'b1;
-        if(x_count == VID_H_TOTAL-1) begin
-            x_count <= 0;
-            
-            y_count <= y_count + 1'b1;
-            if(y_count == VID_V_TOTAL-1) begin
-                y_count <= 0;
-            end
-        end
-        
-        // generate sync 
-        if(x_count == 0 && y_count == 0) begin
-            // sync signal in back porch
-            // new frame
-            vidout_vs <= 1;
-            frame_count <= frame_count + 1'b1;
-        end
-        
-        // we want HS to occur a bit after VS, not on the same cycle
-        if(x_count == 3) begin
-            // sync signal in back porch
-            // new line
-            vidout_hs <= 1;
-        end
-
-        // inactive screen areas are black
-        vidout_rgb <= 24'h0;
-        // generate active video
-        if(x_count >= VID_H_BPORCH && x_count < VID_H_ACTIVE+VID_H_BPORCH) begin
-
-            if(y_count >= VID_V_BPORCH && y_count < VID_V_ACTIVE+VID_V_BPORCH) begin
-                // data enable. this is the active region of the line
-                vidout_de <= 1;
-                
-                // M4: grey idle, green while sending
-                vidout_rgb <= m4_rgb;
-                // orientation marker: framebuffer top-left (should appear
-                // top-left in the user's 180 deg grip)
-                if (visible_x < 16 && visible_y < 16) vidout_rgb <= 24'hFFFFFF;
-                
-            end 
-        end
-    end
-end
-
+assign video_vs   = vidout_vs;
+assign video_hs   = vidout_hs;
 
 
 
@@ -684,8 +615,8 @@ end
 ///////////////////////////////////////////////
 
 
-    wire    clk_core_12288;
-    wire    clk_core_12288_90deg;
+    wire    clk_video;
+    wire    clk_video_90deg;
     
     wire    pll_core_locked;
     wire    pll_core_locked_s;
@@ -695,8 +626,8 @@ mf_pllbase mp1 (
     .refclk         ( clk_74a ),
     .rst            ( 0 ),
     
-    .outclk_0       ( clk_core_12288 ),
-    .outclk_1       ( clk_core_12288_90deg ),
+    .outclk_0       ( clk_video ),
+    .outclk_1       ( clk_video_90deg ),
     
     .locked         ( pll_core_locked )
 );

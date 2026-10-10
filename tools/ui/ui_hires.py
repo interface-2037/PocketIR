@@ -109,14 +109,15 @@ class Canvas:
         return self.img.resize((self.w, self.h), Image.LANCZOS)
 
 
-def render(w, h, pressed=None):
+def render(w, h, pressed=None, tx=None):
+    """tx: TX lamp lit (default: lit whenever a button is pressed)."""
     c = Canvas(w, h)
     c.gradient()
     lab = lambda f: ACC if pressed == f else LABEL
 
     # header: device + TX lamp
     c.text(32, 34, "SONY STR-DH790", 22, TITLE, "lm", "Bold")
-    tx_on = pressed is not None
+    tx_on = (pressed is not None) if tx is None else tx
     c.d.rounded_rectangle(c.s(548, 20, 608, 48), c.s(14)[0],
                           outline=ACC if tx_on else DIM, width=c.s(2)[0])
     c.text(570, 34, "TX", 15, ACC if tx_on else DIM, "mm", "Bold")
