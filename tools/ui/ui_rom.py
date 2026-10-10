@@ -49,19 +49,27 @@ def build():
     ip = idle.load()
     region = [[0] * W for _ in range(H)]
     lit_rgb = [[None] * W for _ in range(H)]
+    shared = []
 
     def claim(img, rid):
         p = img.load()
         for y in range(H):
             for x in range(W):
                 if p[x, y] != ip[x, y]:
-                    assert region[y][x] in (0, rid), f"regions overlap at ({x},{y})"
+                    if region[y][x] not in (0, rid):
+                        # an anti-aliased edge pixel shared by two neighbours
+                        # (e.g. d-pad arm corners at small sizes): a pixel
+                        # holds one lit colour, so the first region keeps it
+                        shared.append((x, y))
+                        continue
                     region[y][x] = rid
                     lit_rgb[y][x] = p[x, y]
 
     for func, bit in KEY_BIT.items():
         claim(ui_hires.render(W, H, func, tx=False), region_of_bit(bit))
     claim(ui_hires.render(W, H, None, tx=True), TX_REGION)
+    if shared:
+        print(f"note: {len(shared)} edge pixel(s) shared between highlight regions, kept by the first")
 
     # one shared palette: quantise idle + all-lit composite together
     lit_img = idle.copy()
