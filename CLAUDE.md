@@ -39,7 +39,7 @@ Analogue's developer docs state that cores have full access to the hardware and 
 
 Resolve these early. Each one can change the plan.
 
-1. **Range (biggest risk).** The Pocket's IR was designed for short-distance Game Boy Color link features. Analogue's manual says distances between IR devices should be very short. A TV may only respond from a few inches away. Measure this at Milestone 3 before investing in UI and databases.
+1. **Range (biggest risk). Measured at M3 (v0.0.6, 2026-10-09): Sony STR-DH790 power toggle works up to ~7.5 inches (~19 cm)** with SIRC-15 dev 48 cmd 21 at 40 kHz / 33% duty. The SIRC-12 dev 16 fallback does nothing (expected for this model). Original note: ** The Pocket's IR was designed for short-distance Game Boy Color link features. Analogue's manual says distances between IR devices should be very short. A TV may only respond from a few inches away. Measure this at Milestone 3 before investing in UI and databases.
 2. **TX polarity and drive.** Confirm that `port_ir_tx = 1` lights the LED. Confirm whether the LED can be switched cleanly at 38 kHz with ~33% duty cycle.
 3. **RX behavior.** Unknown whether `port_ir_rx` gives the raw signal or a demodulated envelope. Only matters for learning mode.
 4. **Power.** Keep the LED off when idle, and keep the receiver disabled unless learning.
