@@ -63,9 +63,33 @@ with open(out / "sirc_ref.txt", "w") as f:
         for level, n in r:
             f.write(f"{level} {n}\n")
 
+# 5. engine vectors: microcode ROM at the test clock + cases to replay
+import random  # noqa: E402
+import ircompile  # noqa: E402
+
+(out / "ir_proto_sim.hex").write_text("".join(f"{w:08X}\n" for w in ircompile.compile_rom(SIM_CLK)))
+rng = random.Random(1)
+cases = [(proto, addr, cmd, 1) for _, proto, addr, cmd in SONY_DH790]          # taps
+cases += [("SIRC15", 48, 18, 5), ("SIRC20", 272, 125, 8)]                      # holds
+for name in ircompile.PROTO_ORDER:                                             # random fields
+    abits = {"SIRC12": 5, "SIRC15": 8, "SIRC20": 13}.get(name, 16)
+    for _ in range(4):
+        cases.append((name, rng.randrange(1 << abits), rng.randrange(128), rng.choice([1, 4])))
+with open(out / "engine_cases.txt", "w") as f:
+    for name, addr, cmd, frames in cases:
+        p = ir.PROTOCOLS[name]
+        r = ir.encode(name, addr, cmd, frames=frames, clk_hz=SIM_CLK)
+        n = max(frames, p.min_frames)
+        period = sum(c for _, c in r) // n
+        # hold the key until halfway through the last wanted frame (tap: 2 cycles)
+        hold = 2 if frames <= p.min_frames else (frames - 1) * period + period // 2
+        f.write(f"{ircompile.PROTO_ORDER.index(name)} {addr} {cmd} {hold} {len(r)}\n")
+        for level, c in r:
+            f.write(f"{level} {c}\n")
+
 if errors:
     print("FAIL test_irproto")
     for e in errors:
         print("  " + e)
     sys.exit(1)
-print(f"PASS test_irproto ({len(SONY_DH790)} Sony vectors -> build/ir_expected/sirc_ref.txt)")
+print(f"PASS test_irproto ({len(SONY_DH790)} Sony vectors, {len(cases)} engine cases -> build/ir_expected/)")
