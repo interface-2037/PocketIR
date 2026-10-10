@@ -8,7 +8,7 @@ $out  = Join-Path $PSScriptRoot 'out'
 New-Item -ItemType Directory -Force $out | Out-Null
 
 # RTL sources available to every testbench.
-$rtl = @(Get-ChildItem (Join-Path $root 'src\fpga\core\ir'), (Join-Path $root 'src\fpga\core\ui'), (Join-Path $root 'src\fpga\core\input') `
+$rtl = @(Get-ChildItem (Join-Path $root 'src\fpga\core\ir'), (Join-Path $root 'src\fpga\core\ui'), (Join-Path $root 'src\fpga\core\lib') `
         -Filter *.v -ErrorAction SilentlyContinue | ForEach-Object FullName)
 
 $failed = 0
@@ -25,7 +25,7 @@ foreach ($tb in Get-ChildItem $PSScriptRoot -Filter 'tb_*.v') {
     if ($Only -and $tb.BaseName -ne $Only) { continue }
     $vvp = Join-Path $out ($tb.BaseName + '.vvp')
     # -s: only the testbench is a root, so unused RTL modules are not elaborated
-    iverilog -g2012 -s $tb.BaseName -I (Join-Path $root 'src\fpga\core\ui') -I (Join-Path $root 'src\fpga\core\ir') -o $vvp $tb.FullName $rtl
+    iverilog -g2012 -s $tb.BaseName -I (Join-Path $root 'src\fpga\core\ui') -I (Join-Path $root 'src\fpga\core\ir') -I (Join-Path $root 'src\fpga\core\lib') -o $vvp $tb.FullName $rtl
     if ($LASTEXITCODE -ne 0) { Write-Host "FAIL $($tb.BaseName) (compile error)"; $failed++; continue }
     $result = vvp -n $vvp | Out-String
     Write-Host $result.Trim()

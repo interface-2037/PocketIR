@@ -45,14 +45,14 @@ for t, brands in types:
 sony = by_type["RECEIVER"].get("SONY", [])
 check(bool(sony) and sony[0][0] == "STR-DH790 VERIFIED", "verified Sony set is not first under RECEIVER/SONY")
 if sony:
-    # compare with the table that runs on hardware today (ir_code_rom.v), not the builder's copy
-    import re
-    bit_to_func = {15: "POWER", 14: "MUTE", 8: "VOL_UP", 9: "VOL_DOWN", 1: "UP", 0: "DOWN",
-                   3: "LEFT", 2: "RIGHT", 7: "OK", 6: "BACK", 5: "MENU", 4: "INPUT"}
-    rom = (ROOT / "src/fpga/core/ir/ir_code_rom.v").read_text()
-    hw = {bit_to_func[int(b)]: (P("SIRC" + s), int(a), int(c)) for b, s, a, c in re.findall(
-        r"4'd(\d+):\s*begin proto = S(15|20); address = 13'd(\d+);\s*command = 7'd(\d+);", rom)}
-    check(len(hw) == 12, f"parsed {len(hw)} entries from ir_code_rom.v")
+    # hardware-verified on the STR-DH790 (v0.1.1 - v0.6.0, the retired ir_code_rom.v);
+    # deliberately a separate copy, not the builder's SONY_DH790 table
+    hw = {"POWER": (P("SIRC15"), 48, 21), "MUTE": (P("SIRC15"), 48, 20),
+          "VOL_UP": (P("SIRC15"), 48, 18), "VOL_DOWN": (P("SIRC15"), 48, 19),
+          "UP": (P("SIRC15"), 176, 120), "DOWN": (P("SIRC15"), 176, 121),
+          "LEFT": (P("SIRC15"), 176, 122), "RIGHT": (P("SIRC15"), 176, 123),
+          "OK": (P("SIRC15"), 48, 12), "BACK": (P("SIRC20"), 272, 125),
+          "MENU": (P("SIRC15"), 48, 83), "INPUT": (P("SIRC20"), 272, 115)}
     cs = sony[0][1]
     for f, code in hw.items():
         check(f in cs and cs[f][:3] == code, f"Sony {f}: library {cs.get(f)} != hardware {code}")
@@ -63,6 +63,26 @@ std = [cs for _, cs in sam if all(cs.get(f, (0, 0, -1))[:3] == (P("Samsung32"), 
                                   [("POWER", 2), ("VOL_UP", 7), ("VOL_DOWN", 11), ("MUTE", 15), ("INPUT", 1)])]
 check(len(sam) >= 10, f"only {len(sam)} Samsung TV sets")
 check(len(std) >= 3, f"only {len(std)} standard Samsung TV sets (Samsung32 dev 7, power 2, vol 7/11, mute 15, source 1)")
+
+# vectors for sim/tb_remote.v: what dev_ctrl.v must load for Sony and Samsung
+sys.path.insert(0, str(ROOT / "tools" / "ui"))
+import ui_text  # noqa: E402
+
+out = ROOT / "build" / "ir_expected"
+out.mkdir(parents=True, exist_ok=True)
+for tag, (tname, bname, si) in {"sony": ("RECEIVER", "SONY", 0), "samsung": ("TV", "SAMSUNG", 0)}.items():
+    ti = list(lib.TYPES).index(tname)
+    bi = list(by_type[tname]).index(bname)
+    model, cs = by_type[tname][bname][si]
+    slots = ui_text.main_slots(f"{bname} {tname}"[:31], model, cs)
+    with open(out / f"dev_{tag}.txt", "w") as fh:
+        fh.write(f"{ti} {bi} {si}\n")
+        for k, f in enumerate(lib.FUNCS):
+            p, d, fw, _ = cs.get(f, (0, 0, 0, ""))
+            fh.write(f"{int(f in cs)} {p:x} {d:x} {fw:x}\n")
+        for s in slots:
+            t = s.text[:31]
+            fh.write(f"{s.word():x} {len(t)} " + " ".join(f"{ord(c):x}" for c in t) + "\n")
 
 if errors:
     print("FAIL test_library")

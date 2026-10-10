@@ -5,3 +5,17 @@ localparam TXT_NSLOTS = 32;
 localparam TXT_SLOT_CHARS = 32;
 localparam [23:0] TXT_COL0 = 24'hECECF0, TXT_COL1 = 24'hCDCED4, TXT_COL2 = 24'h9698A0,
                   TXT_COL3 = 24'h5C5E66, TXT_COL4 = 24'hFFC828, TXT_COL5 = 24'h3C2C00;
+// main-screen slot words (colour = normal; dev_ctrl.v swaps in DIM for missing keys)
+// 0 title, 1 model, 2 POWER, 3 MUTE, 4 MENU, 5 INPUT, 6 OK, 7 BACK, 8 VOL_DOWN, 9 VOL_UP, 10 NAVIGATE
+localparam [31:0] MAIN_SLOT_0 = 32'h04102814;
+localparam [31:0] MAIN_SLOT_1 = 32'h04402828;
+localparam [31:0] MAIN_SLOT_2 = 32'h64292651;
+localparam [31:0] MAIN_SLOT_3 = 32'h5C21FA51;
+localparam [31:0] MAIN_SLOT_4 = 32'h34251A6C;
+localparam [31:0] MAIN_SLOT_5 = 32'h2C288EC3;
+localparam [31:0] MAIN_SLOT_6 = 32'h4421A6C3;
+localparam [31:0] MAIN_SLOT_7 = 32'h3C251B1C;
+localparam [31:0] MAIN_SLOT_8 = 32'h55207539;
+localparam [31:0] MAIN_SLOT_9 = 32'h4D21F139;
+localparam [31:0] MAIN_SLOT_10 = 32'h04268D05;
+localparam [2:0] TXT_DIM = 3'd3;

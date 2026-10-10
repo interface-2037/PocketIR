@@ -176,7 +176,13 @@ def export(slots):
         f"localparam TXT_NSLOTS = {NSLOTS};\nlocalparam TXT_SLOT_CHARS = {SLOT_CHARS};\n"
         "localparam [23:0] TXT_COL0 = 24'h%06X, TXT_COL1 = 24'h%06X, TXT_COL2 = 24'h%06X,\n"
         "                  TXT_COL3 = 24'h%06X, TXT_COL4 = 24'h%06X, TXT_COL5 = 24'h%06X;\n"
-        % tuple(r << 16 | g << 8 | b for r, g, b in COLOURS))
+        % tuple(r << 16 | g << 8 | b for r, g, b in COLOURS)
+        + "// main-screen slot words (colour = normal; dev_ctrl.v swaps in DIM for missing keys)\n"
+          "// 0 title, 1 model, 2 POWER, 3 MUTE, 4 MENU, 5 INPUT, 6 OK, 7 BACK, 8 VOL_DOWN, 9 VOL_UP, 10 NAVIGATE\n"
+        + "".join(f"localparam [31:0] MAIN_SLOT_{i} = 32'h{s.word():08X};\n"
+                  for i, s in enumerate(main_slots("X", "X", {f: (0, 0, 0, "X") for f in LABEL_SLOTS} |
+                                                   {f: (0, 0, 0, "X") for f in ("UP", "DOWN", "LEFT", "RIGHT")})))
+        + f"localparam [2:0] TXT_DIM = 3'd{DIM};\n")
 
 
 def sony_slots():

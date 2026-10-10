@@ -17,7 +17,8 @@ the ROM. Strings are uppercase ASCII, zero-terminated, stored once.
 | 12 | 4 | offset of the label table |
 | 16 | 4 | total ROM size in bytes |
 | 20 | 4 | first 8 hex digits of the Flipper-IRDB commit it was built from |
-| 24 | 8 | reserved (0) |
+| 24 | 4 | offset of the constant-string table (one u32 string offset per entry of `library.CONSTS`: `REMOTE `, `VOLUME DOWN`, `VOLUME UP`, `NAVIGATE`, `MENU`, `INPUT`, `OK`, `BACK`, `POWER`, `MUTE`, ` `; append only) |
+| 28 | 4 | reserved (0) |
 
 ## Type table: one 12-byte entry per device type (menu order)
 | Size | Field |
@@ -39,7 +40,8 @@ the ROM. Strings are uppercase ASCII, zero-terminated, stored once.
 | Size | Field |
 |---|---|
 | 4 | offset of the code set |
-| 4 | offset of the display name (remote/model, e.g. `BN59-01180A +5`) |
+| 2 | offset of the display name (remote/model, e.g. `BN59-01180A`) |
+| 2 | number of other remotes that share this code set (menu shows "& N MORE") |
 
 ## Label table: one 4-byte string offset per label id
 Labels are the names shown on screen (`POWER`, `VOL +`, `SOURCE`, `HOME`,

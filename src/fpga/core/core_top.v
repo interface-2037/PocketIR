@@ -237,13 +237,62 @@ input   wire    [15:0]  cont4_trig
 wire       m4_busy;
 wire [3:0] m4_active_idx;
 
+// M7: the current device comes from the on-chip code library (lib/dev_ctrl.v).
+// Step 4 test: Start + Select toggles Sony STR-DH790 <-> Samsung TV (set 0);
+// the device menu (step 5) replaces this toggle.
+`include "ir_lib.vh"
+wire       m7_chord, m7_code_valid, m7_dev_busy;
+wire [3:0] m7_func;
+wire [5:0] m7_code_proto;
+wire [31:0] m7_code_d, m7_code_f;
+wire       m7_slot_we, m7_str_we;
+wire [4:0] m7_slot_waddr;
+wire [31:0] m7_slot_wdata;
+wire [9:0] m7_str_waddr;
+wire [7:0] m7_str_wdata;
+
+reg  [7:0] m7_boot = 8'd0;               // load the first device shortly after configuration
+reg        m7_load = 1'b0, m7_samsung = 1'b0;
+always @(posedge clk_74a) begin
+    m7_load <= 1'b0;
+    if (m7_boot != 8'hFF) begin
+        m7_boot <= m7_boot + 1'b1;
+        if (m7_boot == 8'hFE) m7_load <= 1'b1;
+    end else if (m7_chord && !m7_dev_busy) begin
+        m7_samsung <= ~m7_samsung;
+        m7_load    <= 1'b1;
+    end
+end
+
+dev_ctrl dev_ctrl_m7 (
+    .clk        ( clk_74a ),
+    .load       ( m7_load ),
+    .dev_t      ( m7_samsung ? DEV_SAMSUNG_T : DEV_SONY_T ),
+    .dev_b      ( m7_samsung ? DEV_SAMSUNG_B : DEV_SONY_B ),
+    .dev_s      ( m7_samsung ? DEV_SAMSUNG_S : DEV_SONY_S ),
+    .busy       ( m7_dev_busy ),
+    .func       ( m7_func ),
+    .code_valid ( m7_code_valid ),
+    .code_proto ( m7_code_proto ),
+    .code_d     ( m7_code_d ),
+    .code_f     ( m7_code_f ),
+    .slot_we    ( m7_slot_we ),  .slot_waddr ( m7_slot_waddr ), .slot_wdata ( m7_slot_wdata ),
+    .str_we     ( m7_str_we ),   .str_waddr  ( m7_str_waddr ),  .str_wdata  ( m7_str_wdata )
+);
+
 ir_remote ir_remote_m4 (
     .clk        ( clk_74a ),
     .keys       ( cont1_key[15:0] ),
     .ir_tx      ( port_ir_tx ),
     .envelope   ( ),
     .busy       ( m4_busy ),
-    .active_idx ( m4_active_idx )
+    .active_idx ( m4_active_idx ),
+    .chord      ( m7_chord ),
+    .code_func  ( m7_func ),
+    .code_valid ( m7_code_valid ),
+    .code_proto ( m7_code_proto ),
+    .code_d     ( m7_code_d ),
+    .code_f     ( m7_code_f )
 );
 assign port_ir_rx_disable = 1;
 
@@ -547,8 +596,8 @@ ui_video ui_video_m5 (
     .tx_on         ( ui_sync2[4] ),
     .clk_sys           ( clk_74a ),
     .active_region_sys ( ui_region_74 ),
-    .slot_we  ( 1'b0 ), .slot_waddr ( 5'd0 ),  .slot_wdata ( 32'd0 ),
-    .str_we   ( 1'b0 ), .str_waddr  ( 10'd0 ), .str_wdata  ( 8'd0 ),
+    .slot_we  ( m7_slot_we ), .slot_waddr ( m7_slot_waddr ), .slot_wdata ( m7_slot_wdata ),
+    .str_we   ( m7_str_we ),  .str_waddr  ( m7_str_waddr ),  .str_wdata  ( m7_str_wdata ),
     .rgb           ( vidout_rgb ),
     .de            ( vidout_de ),
     .hs            ( vidout_hs ),
