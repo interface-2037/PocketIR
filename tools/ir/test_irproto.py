@@ -120,7 +120,9 @@ with open(out / "engine_cases.txt", "w") as fh:
         hold = 2 if frames <= p.min_frames else sum(lens[:-1]) + lens[-1] // 2
         if r and r[0][0] == 0:               # the testbench measures from the first mark
             r = r[1:]
-        fh.write(f"{ircompile.PROTO_ORDER.index(name)} {addr} {cmd} {hold} {len(r)}\n")
+        carrier = round(SIM_CLK / p.carrier_hz)
+        # engine inputs are the packed fields (D, F), written in hex
+        fh.write(f"{ircompile.PROTO_ORDER.index(name)} {d:x} {f:x} {hold} {carrier} {len(r)}\n")
         fh.writelines(f"{lv} {c}\n" for lv, c in r)
 
 if errors:

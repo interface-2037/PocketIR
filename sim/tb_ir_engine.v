@@ -24,7 +24,8 @@ ir_engine #(.PROG_FILE("build/ir_expected/ir_proto_sim.hex")) dut (
     .envelope(env), .ir_tx(tx), .busy(busy), .underrun(underrun));
 
 integer fd, rc, ncase = 0, errors = 0;
-integer pid, ad, cm, hold, nruns, i, level, len, run, got, mism, held, txe;
+integer pid, hold, cper, nruns, i, level, len, run, got, mism, held, txe;
+reg [31:0] ad, cm;                     // packed fields D, F (hex in the vector file)
 reg     tx_prev;
 
 // release the key after `hold` cycles, independently of run measurement
@@ -43,8 +44,8 @@ initial begin
     end
     repeat (10) @(negedge clk);
     while (!$feof(fd)) begin
-        rc = $fscanf(fd, "%d %d %d %d %d\n", pid, ad, cm, hold, nruns);
-        if (rc == 5) begin
+        rc = $fscanf(fd, "%d %h %h %d %d %d\n", pid, ad, cm, hold, cper, nruns);
+        if (rc == 6) begin
             proto = pid; address = ad; command = cm;
             held = 0; key = 1;
             while (!env) @(negedge clk);
@@ -58,12 +59,12 @@ initial begin
                     run = run + 1; @(negedge clk);
                 end
                 if (got != level || run != len) begin
-                    if (mism < 3) $display("  case %0d (proto %0d addr %0d cmd %0d) run %0d: got (%0d, %0d) exp (%0d, %0d)",
+                    if (mism < 3) $display("  case %0d (proto %0d D %h F %h) run %0d: got (%0d, %0d) exp (%0d, %0d)",
                                            ncase, pid, ad, cm, i, got, run, level, len);
                     mism = mism + 1;
                 end
-                // carrier: 40 kHz at 1 MHz = 25-cycle period -> len/25 pulses (+/-1)
-                if (i == 0 && (txe < len / 25 - 1 || txe > len / 25 + 1)) begin
+                // carrier: cper-cycle period at 1 MHz -> len/cper pulses (+/-1)
+                if (i == 0 && (txe < len / cper - 1 || txe > len / cper + 1)) begin
                     $display("  case %0d: %0d carrier pulses in a %0d-cycle mark", ncase, txe, len);
                     mism = mism + 1;
                 end
