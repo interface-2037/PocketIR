@@ -140,7 +140,7 @@ Work **one milestone at a time**. Don't start the next until the human confirms 
 - **Done when:** the UI shows the current device and button map, and highlights while sending.
 
 ### M5 implementation notes (v0.2.0)
-- Video is now **640×480 @ 60 Hz**. The PLL outputs 0/1 were retuned to 24.576 MHz, with 800×512 total timing. `video.json` is 640×480, rotation 180.
+- Video is **800×720 @ 60 Hz** (v0.3.0): exactly 2× into the 1600×1440 panel. The PLL outputs 0/1 are 41.04 MHz, with 900×760 total timing. `video.json` is 800×720, aspect 10:9, rotation 180. The background is flat, because a gradient banded on hardware (v0.2.0, 640×480, also didn't fill the screen).
 - Picture pipeline: edit `tools/ui/ui_hires.py` (the design), then run `python tools/ui/ui_rom.py`. That regenerates `src/fpga/core/ui/ui_rle.hex`, `ui_palette.hex` and `ui_rle.vh` (RLE ROM + 256-colour palette + per-pixel highlight regions), plus `build/ui_expected/` for `sim/tb_ui_video.v`. Rebuild afterwards.
 - Highlight regions: key bit k → k+1 (k ≤ 9), Select 11, Start 12, TX lamp 13 (see `core_top.v` and `ui_rom.py`; keep them in sync with `ir_code_rom.v`).
 - Design review loop: render mockups and critique them before touching RTL (interface2037's request).

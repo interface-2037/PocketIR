@@ -1,4 +1,4 @@
-"""Export the 640x480 M5 UI as FPGA ROM data.
+"""Export the 800x720 M5 UI as FPGA ROM data.
 
 Renders the mockup (ui_hires.py) idle, once per pressed button, and with the
 TX lamp lit. Every pixel that changes when a button is pressed belongs to that
@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import ui_hires  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-W, H = 640, 480
+W, H = 800, 720
 
 KEY_BIT = {"POWER": 15, "MUTE": 14, "VOL+": 8, "VOL-": 9, "UP": 1, "DOWN": 0,
            "LEFT": 3, "RIGHT": 2, "ENTER": 7, "BACK": 6, "AMP MENU": 5, "OPTIONS": 4}

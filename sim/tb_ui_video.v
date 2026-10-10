@@ -1,7 +1,7 @@
 // tb_ui_video.v
 // Runs ui_video for two frames and compares every active pixel with the
 // frames tools/ui/ui_rom.py expects: idle, then ENTER pressed + TX lit.
-// Also checks frame geometry (640x480 DE pixels, 800x512 total) and that the
+// Also checks frame geometry (800x720 DE pixels, 900x760 total) and that the
 // RLE stream never runs dry. Writes the captured frames to sim/out/ for
 // viewing (tools/ui/frame_to_png.py). Prints PASS or FAIL.
 //
@@ -11,12 +11,12 @@
 
 module tb_ui_video;
 
-localparam W = 640, H = 480, N = W * H;
+localparam W = 800, H = 720, N = W * H;
 localparam REGION_ENTER = 4'd8;     // key bit 7 + 1
 localparam REGION_TX    = 4'd13;
 
 reg clk = 0;
-always #20.345 clk = ~clk;          // 24.576 MHz
+always #12.183 clk = ~clk;          // 41.04 MHz
 
 reg  [3:0]  region = 0;
 reg         tx     = 0;
@@ -65,8 +65,8 @@ task run_frame(input integer which, input integer fd);
             $display("  frame %0d: %0d pixels in %0d lines (exp %0d in %0d)", which, k, lines, N, H);
             errors = errors + 1;
         end
-        if (cycles != 800 * 512) begin
-            $display("  frame %0d: %0d clocks per frame (exp %0d)", which, cycles, 800 * 512);
+        if (cycles != 900 * 760) begin
+            $display("  frame %0d: %0d clocks per frame (exp %0d)", which, cycles, 900 * 760);
             errors = errors + 1;
         end
         $display("  frame %0d (%s): %0d mismatching pixels", which, which ? "ENTER + TX" : "idle", bad);

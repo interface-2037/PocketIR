@@ -9,7 +9,7 @@ import sys
 from PIL import Image
 
 
-def main(src, dst, width=640):
+def main(src, dst, width=800):
     px = [int(line, 16) for line in open(src) if line.strip()]
     height = len(px) // width
     img = Image.new("RGB", (width, height))
@@ -19,4 +19,4 @@ def main(src, dst, width=640):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 640)
+    main(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 800)
