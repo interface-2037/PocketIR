@@ -44,12 +44,12 @@ always @(posedge clk) rd <= rom[raddr];
 
 // ------------------------------------------------------------------ press state
 reg [31:0] d_l = 0, f_l = 0;
-reg        tgl = 1'b0;
+reg        tgl = 1'b0, t_l = 1'b0;   // toggle: t_l is this press's T, tgl flips per press
 reg [3:0]  kind = 0;                 // 0 pulse code, 1 biphase RC5, 2 biphase RC6
 reg [7:0]  minf = 0;
 reg [23:0] unit = 24'd1;
 reg [15:0] car_period = 16'd1, car_high = 16'd0;
-reg [7:0]  m0 = 0, s0 = 0, m1 = 0, s1 = 0;
+reg [15:0] m0 = 0, s0 = 0, m1 = 0, s1 = 0;   // bit timings in ticks
 reg [15:0] rep_addr = 0, hdr = 0;
 
 // ------------------------------------------------------------------ segment FIFO
@@ -67,13 +67,14 @@ reg        key_r = 1'b0;
 
 // ------------------------------------------------------------------ producer state
 localparam P_IDLE = 4'd0, P_W1 = 4'd1, P_ENT = 4'd2, P_H0 = 4'd3, P_H1 = 4'd4, P_H2 = 4'd5,
-           P_H3 = 4'd6, P_H4 = 4'd7, P_FETCH = 4'd8, P_DEC = 4'd9, P_BIT = 4'd10;
+           P_H3 = 4'd6, P_H4 = 4'd7, P_FETCH = 4'd8, P_DEC = 4'd9, P_BIT = 4'd10, P_H5 = 4'd11;
 reg [3:0]  ps = P_IDLE, wnext = P_IDLE;
 reg [15:0] pc = 0;
 reg [23:0] sched = 0;                // units scheduled since the frame started
 reg [1:0]  src = 0;
 reg        msbf = 0, inv = 0;
 reg [7:0]  b_lsb = 0, b_cnt = 0, b_i = 0, b_const = 0;
+reg [1:0]  b_sh = 0;                 // bit timings x 2^b_sh (RC6 toggle bit)
 reg        half = 1'b0;
 
 assign busy     = running || (ps != P_IDLE);
@@ -93,7 +94,7 @@ wire [1:0] pops = start_now ? 2'd1 :
 wire [25:0] next_seg = (pops == 2'd2) ? q1 : q0;
 
 // ------------------------------------------------------------------ producer: current bit
-wire [31:0] fval    = (src == 2'd0) ? d_l : (src == 2'd1) ? f_l : (src == 2'd2) ? {31'd0, tgl} : {24'd0, b_const};
+wire [31:0] fval    = (src == 2'd0) ? d_l : (src == 2'd1) ? f_l : (src == 2'd2) ? {31'd0, t_l} : {24'd0, b_const};
 wire [7:0]  bidx    = msbf ? (b_lsb + b_cnt - 8'd1 - b_i) : (b_lsb + b_i);
 wire        bitv    = fval[bidx[4:0]] ^ inv;
 wire        bp_first = (kind == 4'd2) ? bitv : ~bitv;   // RC6: 1 = mark first; RC5: 1 = space first
@@ -115,10 +116,10 @@ always @(*) begin
     end else if (ps == P_BIT) begin
         push = 1'b1;
         if (kind == 4'd0)
-            push_seg = half ? {1'b0, 1'b0, 16'd0, bitv ? s1 : s0}
-                            : {1'b0, 1'b1, 16'd0, bitv ? m1 : m0};
+            push_seg = half ? {1'b0, 1'b0, {8'd0, bitv ? s1 : s0} << b_sh}
+                            : {1'b0, 1'b1, {8'd0, bitv ? m1 : m0} << b_sh};
         else
-            push_seg = {1'b0, half ? ~bp_first : bp_first, 16'd0, m0};
+            push_seg = {1'b0, half ? ~bp_first : bp_first, {8'd0, m0} << b_sh};
     end
 end
 wire room   = (cnt < 2'd2);
@@ -173,7 +174,7 @@ always @(posedge clk) begin
         ps <= P_IDLE;
     end else case (ps)
         P_IDLE: if (key && !key_r && !running) begin
-            d_l <= address; f_l <= command; tgl <= ~tgl;
+            d_l <= address; f_l <= command; t_l <= tgl; tgl <= ~tgl;
             raddr <= {10'd0, proto}; wnext <= P_ENT; ps <= P_W1;
         end
         P_W1:  ps <= wnext;                                    // ROM read latency
@@ -181,8 +182,9 @@ always @(posedge clk) begin
         P_H0:  begin kind <= rd[27:24]; minf <= rd[23:16]; raddr <= hdr + 16'd1; wnext <= P_H1; ps <= P_W1; end
         P_H1:  begin unit <= rd[23:0];                        raddr <= hdr + 16'd2; wnext <= P_H2; ps <= P_W1; end
         P_H2:  begin car_high <= rd[31:16]; car_period <= rd[15:0]; raddr <= hdr + 16'd3; wnext <= P_H3; ps <= P_W1; end
-        P_H3:  begin {s1, m1, s0, m0} <= rd;                  raddr <= hdr + 16'd4; wnext <= P_H4; ps <= P_W1; end
-        P_H4:  begin rep_addr <= rd[15:0]; pc <= hdr + 16'd5; sched <= 24'd0; ps <= P_FETCH; end
+        P_H3:  begin {m1, m0} <= rd;                          raddr <= hdr + 16'd4; wnext <= P_H4; ps <= P_W1; end
+        P_H4:  begin {s1, s0} <= rd;                          raddr <= hdr + 16'd5; wnext <= P_H5; ps <= P_W1; end
+        P_H5:  begin rep_addr <= rd[15:0]; pc <= hdr + 16'd6; sched <= 24'd0; ps <= P_FETCH; end
         P_FETCH: begin raddr <= pc; wnext <= P_DEC; ps <= P_W1; end
         P_DEC: case (rd[31:28])
             OP_MARK, OP_SPACE: if (do_push) begin sched <= sched + rd[23:0]; pc <= pc + 1'b1; ps <= P_FETCH; end
@@ -192,11 +194,11 @@ always @(posedge clk) begin
                       end
             OP_END:   if (do_push) begin sched <= 24'd0; pc <= rep_addr; ps <= P_FETCH; end
             OP_SEND:  begin
-                          src <= rd[27:26]; msbf <= rd[25]; inv <= rd[24];
-                          b_lsb <= rd[23:16]; b_cnt <= rd[15:8]; b_const <= rd[7:0];
+                          src <= rd[27:26]; msbf <= rd[25]; inv <= rd[24]; b_sh <= rd[23:22];
+                          b_lsb <= {2'd0, rd[21:16]}; b_cnt <= {2'd0, rd[13:8]}; b_const <= rd[7:0];
                           b_i <= 8'd0; half <= 1'b0;
-                          ps <= (rd[15:8] == 8'd0) ? P_FETCH : P_BIT;
-                          if (rd[15:8] == 8'd0) pc <= pc + 1'b1;
+                          ps <= (rd[13:8] == 6'd0) ? P_FETCH : P_BIT;
+                          if (rd[13:8] == 6'd0) pc <= pc + 1'b1;
                       end
             default:  ps <= P_IDLE;                          // bad opcode: give up
         endcase

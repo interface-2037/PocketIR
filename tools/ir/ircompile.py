@@ -3,25 +3,27 @@
 ROM layout (32-bit words):
   [0 .. N-1]   entry table: start address of protocol id i (ids = PROTO_ORDER)
   per protocol:
-    HDR      op=1  [27:24] bit kind (0 pulse, 1 biphase RC5, 2 biphase RC6)
+    HDR      op=1  [27:24] bit kind (0 pulse code, 1 biphase RC5, 2 biphase RC6)
                    [23:16] min frames
-    word     unit length in clock cycles                      [23:0]
+    word     tick length in clock cycles                     [23:0]
     word     carrier high cycles [31:16], carrier period cycles [15:0]
-    word     bit encoding: s1[31:24] m1[23:16] s0[15:8] m0[7:0]  (units;
-             biphase: m0 = half-bit length)
+    word     bit encoding marks:  m1[31:16] m0[15:0]          (ticks; biphase: m0 = half bit)
+    word     bit encoding spaces: s1[31:16] s0[15:0]          (ticks)
     word     repeat target address [15:0] (first op of the repeat frame)
     frame ops ... END, then (if the protocol has one) repeat-frame ops ... END
   ops:
-    MARK  op=2  [23:0] units
-    SPACE op=3  [23:0] units
+    MARK  op=2  [23:0] ticks
+    SPACE op=3  [23:0] ticks
     SEND  op=4  [27:26] src (0 D, 1 F, 2 T, 3 C) [25] msb first [24] invert
-                [23:16] first bit  [15:8] bit count  [7:0] constant (src C)
-    GAPTO op=5  [23:0] units after the frame started
+                [23:22] width shift (bit timings x 2^shift)
+                [21:16] first bit  [13:8] bit count  [7:0] constant (src C)
+    GAPTO op=5  [23:0] ticks after the frame started
     END   op=6  frame done: repeat (jump to target) while the key is held or
                 fewer than min frames were sent; otherwise stop
 
-Units and carrier timing are converted to clock cycles here, so the ROM is
-built for one clock frequency (hardware: 74.25 MHz; testbenches pass their own).
+One tick = irproto.TICK_US (4 us). Tick and carrier lengths are converted to
+clock cycles here, so the ROM is built for one clock frequency (hardware:
+74.25 MHz; testbenches pass their own).
 
 Usage:  python tools/ir/ircompile.py [--clk HZ] [--out DIR]
         default: 74.25 MHz -> src/fpga/core/ir/ir_proto.hex + ir_proto.vh
@@ -35,7 +37,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 import irproto as ir  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-PROTO_ORDER = ["SIRC12", "SIRC15", "SIRC20"]      # protocol id = index; append only
+# protocol id = index into this list. Append only: ids end up in the code library.
+PROTO_ORDER = ["SIRC12", "SIRC15", "SIRC20", "NEC", "NECext", "Samsung32",
+               "RC5", "RC5X", "RC6", "Kaseikyo", "RCA", "Pioneer"]
 
 OP_HDR, OP_MARK, OP_SPACE, OP_SEND, OP_GAPTO, OP_END = 1, 2, 3, 4, 5, 6
 SRC = {"D": 0, "F": 1, "T": 2, "C": 3}
@@ -43,15 +47,16 @@ SRC = {"D": 0, "F": 1, "T": 2, "C": 3}
 
 def op_word(op):
     if isinstance(op, ir.Mark):
-        return (OP_MARK << 28) | op.n
+        return (OP_MARK << 28) | ir.ticks(op.us)
     if isinstance(op, ir.Space):
-        return (OP_SPACE << 28) | op.n
+        return (OP_SPACE << 28) | ir.ticks(op.us)
     if isinstance(op, ir.GapTo):
-        return (OP_GAPTO << 28) | op.n
+        return (OP_GAPTO << 28) | ir.ticks(op.us)
     if isinstance(op, ir.Send):
-        assert 0 <= op.const < 256 and op.count < 256 and op.lsb < 256
+        assert 0 <= op.const < 256 and 0 < op.count < 64 and op.lsb < 64 and op.shift < 4
         return ((OP_SEND << 28) | (SRC[op.src] << 26) | (int(op.msb_first) << 25) |
-                (int(op.invert) << 24) | (op.lsb << 16) | (op.count << 8) | op.const)
+                (int(op.invert) << 24) | (op.shift << 22) | (op.lsb << 16) |
+                (op.count << 8) | op.const)
     raise ValueError(op)
 
 
@@ -61,17 +66,17 @@ def compile_rom(clk_hz):
         p = ir.PROTOCOLS[name]
         words[pid] = len(words)
         if isinstance(p.bits, ir.PulseCode):
-            kind, b = 0, p.bits
-            enc = (b.s1 << 24) | (b.m1 << 16) | (b.s0 << 8) | b.m0
+            kind = 0
+            m0, s0, m1, s1 = (ir.ticks(x) for x in (p.bits.m0, p.bits.s0, p.bits.m1, p.bits.s1))
         else:
             kind = 2 if p.bits.one_mark_first else 1
-            enc = p.bits.half
+            m0, s0, m1, s1 = ir.ticks(p.bits.half), 0, 0, 0
         period = round(clk_hz / p.carrier_hz)
         high = round(period * p.duty_pct / 100)
-        unit = ir.unit_cycles(p, clk_hz)
-        assert unit < (1 << 24) and period < (1 << 16)
+        assert period < (1 << 16) and max(m0, s0, m1, s1) < (1 << 16)
         words += [(OP_HDR << 28) | (kind << 24) | (p.min_frames << 16),
-                  unit, (high << 16) | period, enc, 0]
+                  ir.tick_cycles(clk_hz), (high << 16) | period,
+                  (m1 << 16) | m0, (s1 << 16) | s0, 0]
         repeat_slot = len(words) - 1
         frame_start = len(words)
         words += [op_word(o) for o in p.frame] + [OP_END << 28]
@@ -93,7 +98,7 @@ def main():
     (args.out / "ir_proto.hex").write_text("".join(f"{w:08X}\n" for w in words))
     vh = ["// generated by tools/ir/ircompile.py -- do not edit",
           f"localparam IR_PROTO_WORDS = {len(words)};"]
-    vh += [f"localparam PROTO_{n} = {i};" for i, n in enumerate(PROTO_ORDER)]
+    vh += [f"localparam PROTO_{n.upper()} = {i};" for i, n in enumerate(PROTO_ORDER)]
     (args.out / "ir_proto.vh").write_text("\n".join(vh) + "\n")
     print(f"{len(PROTO_ORDER)} protocols, {len(words)} words @ {args.clk} Hz -> {args.out}")
 
