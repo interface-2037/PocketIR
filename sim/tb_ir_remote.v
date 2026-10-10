@@ -19,7 +19,7 @@ reg  [15:0] keys = 0;
 wire        tx, env, busy;
 wire [3:0]  active_idx;
 
-ir_remote #(.CLK_HZ(CLK_HZ)) dut (
+ir_remote #(.PROG_FILE("build/ir_expected/ir_proto_sim.hex")) dut (
     .clk(clk), .keys(keys), .ir_tx(tx), .envelope(env), .busy(busy), .active_idx(active_idx));
 
 integer errors = 0;

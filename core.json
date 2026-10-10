@@ -7,8 +7,8 @@
             "description": "Universal TV/AV IR remote using the Pocket IR LED.",
             "author": "interface2037",
             "url": "",
-            "version": "0.4.1",
-            "date_release": "2026-10-09"
+            "version": "0.5.0",
+            "date_release": "2026-10-10"
         },
         "framework": {
             "target_product": "Analogue Pocket",

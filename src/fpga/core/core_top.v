@@ -232,15 +232,12 @@ input   wire    [15:0]  cont4_trig
 //   d-pad menu (flipped), Y enter, X BACK, B AMP MENU, A options.
 // Tap = 3 frames, hold = repeat.
 // Analogue: the IR LED is active high and must never be driven with DC --
-// port_ir_tx only ever carries the 40 kHz PWM carrier (50% duty: best range
-// in the M3 test). Receiver stays off (TX works with port_ir_rx_disable = 1).
+// port_ir_tx only ever carries the protocol's PWM carrier (from ir_engine;
+// SIRC 40 kHz 50%). Receiver stays off (TX works with port_ir_rx_disable = 1).
 wire       m4_busy;
 wire [3:0] m4_active_idx;
 
-ir_remote #(
-    .CLK_HZ   ( 74_250_000 ),
-    .DUTY_PCT ( 50 )
-) ir_remote_m4 (
+ir_remote ir_remote_m4 (
     .clk        ( clk_74a ),
     .keys       ( cont1_key[15:0] ),
     .ir_tx      ( port_ir_tx ),

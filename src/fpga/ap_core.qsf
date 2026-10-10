@@ -746,6 +746,8 @@ set_global_assignment -name VERILOG_FILE core/ir/ir_diag.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_sirc_tx.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_code_rom.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_remote.v
+set_global_assignment -name VERILOG_FILE core/ir/ir_engine.v
+set_global_assignment -name SEARCH_PATH core/ir
 set_global_assignment -name VERILOG_FILE core/ui/ui_video.v
 set_global_assignment -name SEARCH_PATH core/ui
 set_global_assignment -name SDC_FILE core/core_constraints.sdc

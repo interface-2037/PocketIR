@@ -1,18 +1,18 @@
 // ir_remote.v
-// M4: Pocket buttons -> Sony SIRC codes -> IR LED.
+// Pocket buttons -> codes from ir_code_rom -> ir_engine (M6) -> IR LED.
 // The lowest-numbered pressed button with a code is sent. A tap sends 3
 // frames; holding repeats. If a different button is pressed while a code is
 // still going out, the old code finishes its minimum frames, then the new
 // button starts -- a held button never repeats another button's code.
-// Carrier: 40 kHz, 50% duty (best range on hardware, M3 test: 10.5 in).
+// Carrier frequency and duty come from the protocol (SIRC: 40 kHz, 50%: best
+// range on hardware in the M3 test, 10.5 in).
 
 module ir_remote #(
-    parameter CLK_HZ   = 74_250_000,
-    parameter DUTY_PCT = 50
+    parameter PROG_FILE = "core/ir/ir_proto.hex"     // protocol microcode (ircompile.py)
 ) (
     input  wire        clk,
     input  wire [15:0] keys,          // cont1_key[15:0]
-    output reg         ir_tx = 1'b0,
+    output wire        ir_tx,
     output wire        envelope,
     output wire        busy,
     output reg  [3:0]  active_idx = 4'd0
@@ -43,12 +43,12 @@ wire [3:0] sel_idx;
 assign {sel_any, sel_idx} = pick(keys_r2);
 
 wire        rom_valid;
-wire [4:0]  rom_nbits;
+wire [5:0]  rom_proto;
 wire [12:0] rom_address;
 wire [6:0]  rom_command;
 ir_code_rom rom (
     .idx(busy ? active_idx : sel_idx), .valid(rom_valid),
-    .nbits(rom_nbits), .address(rom_address), .command(rom_command));
+    .proto(rom_proto), .address(rom_address), .command(rom_command));
 
 always @(posedge clk)
     if (!busy) active_idx <= sel_idx;
@@ -57,15 +57,9 @@ always @(posedge clk)
 // selected, so repeats stop when the user switches buttons.
 wire enc_key = sel_any && rom_valid && (!busy || sel_idx == active_idx);
 
-ir_sirc_tx #(.CLK_HZ(CLK_HZ)) sirc (
-    .clk(clk), .key(enc_key),
-    .nbits(rom_nbits), .address(rom_address), .command(rom_command),
-    .envelope(envelope), .busy(busy));
-
-wire carrier;
-ir_carrier #(.CLK_HZ(CLK_HZ), .CARRIER_HZ(40_000), .DUTY_PCT(DUTY_PCT)) car (
-    .clk(clk), .en(envelope), .out(carrier));
-
-always @(posedge clk) ir_tx <= carrier;
+ir_engine #(.PROG_FILE(PROG_FILE)) engine (
+    .clk(clk), .key(enc_key), .proto(rom_proto),
+    .address({19'd0, rom_address}), .command({25'd0, rom_command}),
+    .envelope(envelope), .ir_tx(ir_tx), .busy(busy), .underrun());
 
 endmodule
