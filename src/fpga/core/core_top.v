@@ -231,6 +231,7 @@ input   wire    [15:0]  cont4_trig
 // every mode only gates a 38 kHz PWM carrier.
 wire [2:0] ir_diag_mode;
 wire       ir_diag_envelope;
+wire       ir_diag_rx_active;
 
 ir_diag #(
     .CLK_HZ   ( 74_250_000 ),
@@ -238,10 +239,12 @@ ir_diag #(
 ) ir_diag_m1 (
     .clk           ( clk_74a ),
     .keys          ( cont1_key ),
+    .ir_rx         ( port_ir_rx ),
     .ir_tx         ( port_ir_tx ),
     .ir_rx_disable ( port_ir_rx_disable ),
     .mode          ( ir_diag_mode ),
-    .envelope      ( ir_diag_envelope )
+    .envelope      ( ir_diag_envelope ),
+    .rx_active     ( ir_diag_rx_active )
 );
 
 // bridge endianness
@@ -554,20 +557,21 @@ assign video_hs = vidout_hs;
     reg [9:0]   square_x = 'd135;
     reg [9:0]   square_y = 'd95;
 
-// IR diagnostic mode/envelope cross from clk_74a into the video clock.
+// IR diagnostic mode/envelope/rx_active cross from clk_74a into the video clock.
 // Both change rarely (button press, 1 Hz), so a 2-flop synchroniser per bit
 // is enough; a one-frame mixed value during a change is harmless.
-    reg [3:0]   diag_sync1, diag_sync2;
+    reg [4:0]   diag_sync1, diag_sync2;
     reg [23:0]  diag_rgb;
 always @(posedge clk_core_12288) begin
-    diag_sync1 <= {ir_diag_envelope, ir_diag_mode};
+    diag_sync1 <= {ir_diag_rx_active, ir_diag_envelope, ir_diag_mode};
     diag_sync2 <= diag_sync1;
     case (diag_sync2[2:0])
         3'd0:    diag_rgb <= diag_sync2[3] ? 24'h3060FF : 24'h0C1840;   // blue
         3'd1:    diag_rgb <= diag_sync2[3] ? 24'h30FF30 : 24'h0C400C;   // green
         3'd2:    diag_rgb <= diag_sync2[3] ? 24'hFFE020 : 24'h403808;   // yellow
         3'd3:    diag_rgb <= diag_sync2[3] ? 24'hFF30FF : 24'h400C40;   // magenta
-        default: diag_rgb <= 24'h601010;                                // red (off)
+        3'd4:    diag_rgb <= 24'h601010;                                // red (off)
+        default: diag_rgb <= 24'h404040;                                // grey (rx test)
     endcase
 end
 
@@ -624,6 +628,10 @@ always @(posedge clk_core_12288 or negedge reset_n) begin
                 
                 // M1 diagnostic: colour = IR mode, bright while envelope on
                 vidout_rgb <= diag_rgb;
+                // white box in the centre while the IR receiver sees activity
+                if (diag_sync2[4] && visible_x >= 120 && visible_x < 200 &&
+                                     visible_y >= 80  && visible_y < 160)
+                    vidout_rgb <= 24'hFFFFFF;
                 
             end 
         end

@@ -9,6 +9,10 @@
 //   down   2     38 kHz 50%            0            yellow
 //   left   3     38 kHz inverted (67%) 0            magenta
 //   B      4     LED off               1            red
+//   A      5     LED off               0            grey    (receiver test)
+//
+// rx_active goes high for ~100 ms after any edge on the (synchronised)
+// receiver output, so it works whatever the receiver's polarity is.
 //
 // Longest LED on-time in any mode is < 18 us (one inverted 38 kHz pulse).
 
@@ -18,10 +22,12 @@ module ir_diag #(
 ) (
     input  wire        clk,
     input  wire [31:0] keys,          // cont1_key
+    input  wire        ir_rx,         // port_ir_rx (asynchronous)
     output reg         ir_tx = 1'b0,
     output reg         ir_rx_disable = 1'b1,
     output reg  [2:0]  mode = 3'd0,
-    output wire        envelope
+    output wire        envelope,
+    output reg         rx_active = 1'b0
 );
 
 reg [7:0] keys_r = 8'd0;
@@ -32,6 +38,7 @@ always @(posedge clk) begin
     else if (keys_r[1]) mode <= 3'd2;   // down
     else if (keys_r[2]) mode <= 3'd3;   // left
     else if (keys_r[5]) mode <= 3'd4;   // B
+    else if (keys_r[4]) mode <= 3'd5;   // A
 end
 
 ir_blink #(.CLK_HZ(CLK_HZ), .BLINK_HZ(BLINK_HZ)) blink (.clk(clk), .blink(envelope));
@@ -49,6 +56,18 @@ always @(posedge clk) begin
         default: ir_tx <= 1'b0;
     endcase
     ir_rx_disable <= (mode == 3'd0) || (mode == 3'd4);
+end
+
+// Receiver activity detector: 2-flop sync, then stretch every edge.
+localparam HOLD = CLK_HZ / 10;
+reg [2:0]               rx_sync = 3'b000;
+reg [$clog2(HOLD)-1:0]  rx_hold = 0;
+always @(posedge clk) begin
+    rx_sync <= {rx_sync[1:0], ir_rx};
+    if (ir_rx_disable)               rx_hold <= 0;
+    else if (rx_sync[2] ^ rx_sync[1]) rx_hold <= HOLD - 1;
+    else if (rx_hold != 0)           rx_hold <= rx_hold - 1'b1;
+    rx_active <= (rx_hold != 0);
 end
 
 endmodule
