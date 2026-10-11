@@ -14,3 +14,6 @@ build/
 sim/out/
 *.vcd
 __pycache__/
+
+# Save file copied off the Pocket (personal data)
+/irremote.sav
