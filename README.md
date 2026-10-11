@@ -1,4 +1,4 @@
-# IR Remote for Analogue Pocket
+# PocketIR
 
 An openFPGA core that turns the Analogue Pocket's built-in infrared LED into a universal TV/AV remote.
 
@@ -33,9 +33,9 @@ Holding a button repeats it. Labels on screen change with the selected device, a
 
 ## Install
 
-1. Download the latest `interface2037.IRRemote_*.zip` from [Releases](../../releases).
+1. Download the latest `interface2037.PocketIR_*.zip` from [Releases](../../releases).
 2. Unzip it and copy the `Cores` and `Platforms` folders to the root of your Pocket's SD card (merge with the existing folders).
-3. On the Pocket, open **openFPGA → IR Remote**.
+3. On the Pocket, open **openFPGA → PocketIR**.
 
 Needs Pocket firmware 1.1 or later.
 

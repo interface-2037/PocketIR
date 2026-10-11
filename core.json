@@ -2,9 +2,9 @@
     "core": {
         "magic": "APF_VER_1",
         "metadata": {
-            "platform_ids": ["irremote"],
-            "shortname": "IRRemote",
-            "description": "Universal TV/AV IR remote using the Pocket IR LED.",
+            "platform_ids": ["pocketir"],
+            "shortname": "PocketIR",
+            "description": "PocketIR: universal TV/AV IR remote using the Pocket IR LED.",
             "author": "interface2037",
             "url": "https://github.com/interface-2037/PocketIR",
             "version": "0.11.1",

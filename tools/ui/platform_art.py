@@ -3,7 +3,7 @@ the openFPGA Library site.
 
 Draws both in grayscale at 4x and downsamples, then writes:
   docs/ui/platform_banner.png, docs/ui/core_icon.png     previews (upright)
-  dist/platforms/_images/irremote.bin, dist/icon.bin     APF images
+  dist/platforms/_images/pocketir.bin, dist/icon.bin     APF images
 
 APF image format (checked against the core template's own images): 16 bits
 per pixel, luminance in the first byte, 0 in the second; pixels stored
@@ -77,7 +77,7 @@ def banner():
     W, H = 521, 165
     im = Image.new("L", (W * S, H * S), BG)
     d = ImageDraw.Draw(im)
-    d.text(r(24, 66), "IR REMOTE", font=font(40), fill=TEXT, anchor="ls")
+    d.text(r(24, 66), "PocketIR", font=font(40), fill=TEXT, anchor="ls")
     d.text(r(25, 90), "UNIVERSAL TV / AV REMOTE", font=font(12, "SemiBold"), fill=SUB, anchor="ls")
     d.text(r(25, 108), "1,000+ DEVICES · LEARNS YOUR REMOTE", font=font(10, "Medium"), fill=SUB - 30, anchor="ls")
     led = pocket(d, 262, 60, w=92, h=54)
@@ -134,7 +134,7 @@ def from_apf(data, w, h):
 
 def main():
     check = "--check" in sys.argv
-    jobs = [(banner(), "docs/ui/platform_banner.png", "dist/platforms/_images/irremote.bin"),
+    jobs = [(banner(), "docs/ui/platform_banner.png", "dist/platforms/_images/pocketir.bin"),
             (icon(), "docs/ui/core_icon.png", "dist/icon.bin")]
     for im, png, binf in jobs:
         if check:

@@ -1,6 +1,6 @@
 // dev_save.v
 // Remembers the current device across sessions (M7 step 6) through an APF
-// nonvolatile data slot (data.json: slot 0, "irremote.sav" at ADDR). APF
+// nonvolatile data slot (data.json: slot 0, "pocketir.sav" at ADDR). APF
 // writes the save file into the core over the bridge while the core is in
 // reset, and reads it back over the bridge when the core shuts down (quit,
 // power off).

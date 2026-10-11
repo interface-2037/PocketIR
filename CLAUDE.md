@@ -1,4 +1,6 @@
-# Pocket IR Remote — Project Brief
+# PocketIR — Project Brief
+
+**Brand: PocketIR** (core `interface2037.PocketIR`, platform id `pocketir`, save file `pocketir.sav`; renamed from IR Remote / `irremote` at v0.11.1). Use this name in every user-facing place.
 
 An openFPGA core for the Analogue Pocket that turns the Pocket's built-in infrared LED into a universal TV/AV remote control.
 
@@ -63,7 +65,7 @@ Claude Code cannot load the core onto the Pocket or watch the LED. The human (in
 
 1. Clone `https://github.com/open-fpga/core-template` as this repo.
 2. Clone `https://github.com/agg23/analogue-pocket-utils` next to it as reference (do not vendor the whole thing; copy only what's needed, with attribution).
-3. Fill in the core JSON files (`core.json`, `video.json`, `input.json`, `data.json`, etc.) with a placeholder author/name, e.g. `interface2037.IRRemote`.
+3. Fill in the core JSON files (`core.json`, `video.json`, `input.json`, `data.json`, etc.) with a placeholder author/name, now `interface2037.PocketIR`.
 
 ### Code layout (current)
 
@@ -83,7 +85,7 @@ src/fpga/core/
     menu.v              # device menu navigation, recent list, learning (model: tools/ui/ui_menu.py)
     ir_match.v          # M9: identify a remote: compare the capture with every library code
     recent.v            # M9: last 20 devices (save file, after the capture)
-    dev_save.v          # current device <-> nonvolatile save slot (data.json slot 0, irremote.sav; file = device block + capture + recent list)
+    dev_save.v          # current device <-> nonvolatile save slot (data.json slot 0, pocketir.sav; file = device block + capture + recent list)
   ui/
     ui_video.v          # 400x360 video: RLE picture ROM + palette + highlights + menu background
     ui_text.v           # runtime text layer (32 slots, Inter fonts)
@@ -92,7 +94,7 @@ src/fpga/core/
 tools/
   build.ps1, package_core.py        # Quartus build + SD-card package
   ir/  irproto.py (protocols + reference encoder), ircompile.py, library.py, test_*.py, measure/,
-       read_save.py (decode irremote.sav), rxcap.py (receiver capture analysis + protocol decoder)
+       read_save.py (decode pocketir.sav), rxcap.py (receiver capture analysis + protocol decoder)
   ui/  ui_hires.py (design), ui_rom.py (export + video mode), ui_text.py, ui_menu.py (menu model), test_menu.py,
        ui_m9.py (M9 mockups)
 sim/

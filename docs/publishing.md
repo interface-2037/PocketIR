@@ -39,5 +39,5 @@ git push -u origin main
 3. On GitHub: **Releases → Draft a new release**.
    - **Choose a tag** → type `v0.11.0` (the version) → *Create new tag on publish*.
    - Title: `v0.11.0`. Notes: what changed and what was tested on hardware.
-   - Drag in **one** zip: `build/interface2037.IRRemote_<version>_<date>.zip`. One zip only, or the library needs an Asset Filter.
+   - Drag in **one** zip: `build/interface2037.PocketIR_<version>_<date>.zip`. One zip only, or the library needs an Asset Filter.
    - **Publish release**. The library picks it up automatically.

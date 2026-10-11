@@ -1,4 +1,4 @@
-"""M5 UI mockup renderer for the Pocket IR Remote.
+"""M5 UI mockup renderer for PocketIR.
 
 Renders the screen exactly the way the planned hardware will draw it:
 a 40x30 grid of 8x8 tiles over the 320x240 picture, each tile = one 1-bpp

@@ -1,4 +1,4 @@
-"""Receiver capture (M9 step 1): decode and analyse the ir_rx_cap region of irremote.sav.
+"""Receiver capture (M9 step 1): decode and analyse the ir_rx_cap region of pocketir.sav.
 
 The core records every edge of port_ir_rx as {level after the edge, clocks
 since the previous edge} (src/fpga/core/ir/ir_rx_cap.v). This module turns

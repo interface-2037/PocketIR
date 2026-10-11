@@ -1,7 +1,7 @@
-"""Decode irremote.sav: the saved device (lib/dev_save.v) and, from v0.10.0,
+"""Decode pocketir.sav (irremote.sav before v0.11.1): the saved device (lib/dev_save.v) and, from v0.10.0,
 the receiver capture that follows it (ir/ir_rx_cap.v, analysed by rxcap.py).
 
-Usage:  python tools/ir/read_save.py [path/to/irremote.sav]
+Usage:  python tools/ir/read_save.py [path/to/pocketir.sav]
 """
 
 import struct
@@ -13,7 +13,7 @@ import library as lib  # noqa: E402
 import rxcap  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-path = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "irremote.sav")
+path = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "pocketir.sav")
 data = path.read_bytes()
 print(f"{path}: {len(data)} bytes: " + " ".join(f"{x:02x}" for x in data[:32]) + (" ..." if len(data) > 32 else ""))
 w = struct.unpack(f">{len(data) // 4}I", data[: len(data) // 4 * 4])
