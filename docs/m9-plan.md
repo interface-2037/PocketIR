@@ -61,7 +61,7 @@ Mockups: `docs/ui/m9_*.png` (`tools/ui/ui_m9.py`).
    simulated against the model (`tb_remote`: 78 steps incl. 6 remote buttons).
    The separate `menu.v` timing fix (Q_SCROLL) is folded in.
 6. Build v0.11.0. Hardware test: identify the Sony and Samsung remotes, pick
-   the match, check the recent list survives a restart. **← now**
+   the match, check the recent list survives a restart. Done 2026-10-11: all steps passed.
 
 ## Risks
 - Range is ~3 in, so the instructions say "1 to 3 inches".

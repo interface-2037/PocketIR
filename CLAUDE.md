@@ -229,7 +229,8 @@ Design constraints:
   - The buffers are appended to `irremote.sav` (file size 0x8040), so APF writes them to the SD card on Quit.
   - The receiver is on all the time in this build, and the TX lamp lights while a burst is being recorded.
   - `python tools/ir/read_save.py <file>` reports the idle level, raw vs demodulated, carrier, mark/space timing, the decoded protocol and code, and the matching library entries.
-- **Steps 2–5 (v0.11.0, built 2026-10-11, not yet tested on hardware):** mockups approved; identification engine, recent list and menu screens built and simulated.
+- **Done on hardware (v0.11.0, 2026-10-11).** Saved device carried over the update; Sony remote identified and used; Samsung remote (sends IR only for POWER, Bluetooth for the rest) narrowed to 12 sets by POWER, and the 2nd set in the list worked; recent list and restart OK.
+- **Steps 2–5 (v0.11.0):** mockups approved; identification engine, recent list and menu screens built and simulated.
   - Menu home: RECENT DEVICES, LEARN FROM REMOTE, then the types (a divider line between). The recent list opens on the previous device.
   - Learn: the receiver is on only on the learn / match screens. Each remote button is matched against the whole library in ~12 ms (`ir_match.v`); further buttons narrow the list; BACK on the list listens again from scratch.
   - Save file: device block, raw capture (diagnosis), recent list; 0x80A0 bytes. The library id is now a CRC of the device data only; the v0.10.0 id is still accepted, so the saved device survives the update.
