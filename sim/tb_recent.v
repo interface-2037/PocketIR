@@ -2,7 +2,9 @@
 // recent (M9): a valid loaded list reads back unchanged before boot and is
 // kept at boot; the current device moves to the front (from the middle, from
 // the end of a full list, or new with the oldest dropped); an invalid file
-// (wrong library id) or no file gives a list of just the current device.
+// (wrong library id) or no file gives a list of just the current device; a
+// list written while running (wake from sleep) is not tracked into until the
+// boot that follows.
 // Checked against a model kept here, through both the menu port and bridge
 // reads (latched on bridge_rd, like APF). Prints PASS or FAIL.
 
@@ -123,6 +125,14 @@ initial begin
     write(ADDR + 4, LIB); write(ADDR + 8, 25);
     do_boot; mc = 0; mpush({cur_t, cur_b[11:0], cur_s[11:0]});
     check_list("bad count");
+    // ---- 8. a save state written while running (sleep wake), then boot: the
+    // current device is not pushed into the half-written list
+    write(ADDR, MAGIC); write(ADDR + 4, LIB); write(ADDR + 8, 2);
+    write(ADDR + 16, dev(6, 1, 2)); repeat (8) @(negedge clk);
+    write(ADDR + 20, dev(6, 3, 4)); repeat (8) @(negedge clk);
+    m[0] = dev(6, 1, 2); m[1] = dev(6, 3, 4); mc = 2;
+    do_boot; mpush({cur_t, cur_b[11:0], cur_s[11:0]});
+    check_list("written while running");
 
     if (errors == 0) $display("PASS tb_recent");
     else             $display("FAIL tb_recent (%0d errors)", errors);

@@ -31,7 +31,7 @@ wire [31:0] dt_data [0:3];
 genvar g;
 generate for (g = 0; g < 4; g = g + 1) begin : inst
     dev_save #(.ADDR(ADDR), .LIB_ID(LIB), .LIB_ID_V1(V1), .BOOT_T(8'd1), .BOOT_B(16'd31), .BOOT_S(16'd0)) ds (
-        .clk(clk), .reset_n(reset_n[g]), .allcomplete(ac[g]),
+        .clk(clk), .reset_n(reset_n[g]), .allcomplete(ac[g]), .saved(1'b0), .restore(1'b0),
         .bridge_addr(addr), .bridge_wr(wr[g]), .bridge_wr_data(wdata), .bridge_rd(rdq[g]),
         .rd_data(rdata[g]), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s),
         .boot(boot[g]), .boot_t(bt[g]), .boot_b(bb[g]), .boot_s(bs[g]),

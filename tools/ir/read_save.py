@@ -39,6 +39,8 @@ if len(w) >= 8:
           f"all-completes {(w[4] >> 8) & 0xFF}, boots {w[4] & 0xFF}")
     print(f"             slot writes {w[5] >> 16} (while running {w[5] & 0xFFFF}), reads before this one {w[7] >> 16}")
     print(f"             at the last boot: word 2 {w[6]:08x}, valid {(w[7] >> 2) & 1}, fresh {(w[7] >> 1) & 1}; booted {w[7] & 1}")
+    print(f"             sleep: save states made {(w[7] >> 12) & 0xF}, loaded {(w[7] >> 8) & 0xF}, "
+          f"last load in reset {(w[7] >> 7) & 1}, last boot from a save state {(w[7] >> 6) & 1}")
 
 print()
 for line in rxcap.report(rxcap.parse(data), types):

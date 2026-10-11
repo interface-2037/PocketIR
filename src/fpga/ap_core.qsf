@@ -751,6 +751,7 @@ set_global_assignment -name VERILOG_FILE core/lib/menu.v
 set_global_assignment -name VERILOG_FILE core/lib/dev_save.v
 set_global_assignment -name VERILOG_FILE core/lib/ir_match.v
 set_global_assignment -name VERILOG_FILE core/lib/recent.v
+set_global_assignment -name VERILOG_FILE core/lib/sleep_state.v
 set_global_assignment -name SEARCH_PATH core/lib
 set_global_assignment -name VERILOG_FILE core/ui/ui_video.v
 set_global_assignment -name VERILOG_FILE core/ui/ui_text.v

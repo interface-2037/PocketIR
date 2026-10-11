@@ -13,6 +13,10 @@
 //   4..7 diagnostics: the start-up sequence as the core saw it (see the read mux)
 // (M9: the file continues with the receiver capture, ir/ir_rx_cap.v; SIZE
 // covers both, so APF reads the whole file back.)
+// Sleep (sleep_state.v): the save state is these 8 words plus the recent list,
+// aliased by core_top. On wake APF writes them like a slot load, then
+// `restore` pulses: it boots like a late all-complete if the core is running;
+// in reset, the next reset exit boots the written words anyway (they are fresh).
 //
 // Boot: on every reset_n rise (APF "reset exit"), and on a
 // dataslot_allcomplete that arrives while already running, `boot` pulses with
@@ -38,6 +42,8 @@ module dev_save #(
     input  wire        clk,                 // clk_74a (bridge domain)
     input  wire        reset_n,             // core_bridge_cmd: reset exit / enter
     input  wire        allcomplete,         // core_bridge_cmd: data slot access all complete
+    input  wire        saved,               // sleep_state: save state handed out (diagnostics)
+    input  wire        restore,             // sleep_state: save state written, boot from it
     input  wire [31:0] bridge_addr,
     input  wire        bridge_wr,
     input  wire [31:0] bridge_wr_data,
@@ -68,10 +74,13 @@ reg [7:0]  n_rise = 0, n_fall = 0, n_ac = 0, n_boot = 0;
 reg [15:0] n_wr = 0, n_wr_run = 0, n_rd = 0;
 reg [31:0] w2_at_boot = 32'hFFFFFFFF;
 reg        valid_at_boot = 1'b0, fresh_at_boot = 1'b0;
+reg [3:0]  n_save = 0, n_load = 0;          // save states handed out / loaded
+reg        load_in_reset = 1'b0, ld_pending = 1'b0, boot_restore = 1'b0;
 
 wire rise  = reset_n && !rst_r;
 wire ac_go = allcomplete && !ac_r && reset_n && !ac_boot;   // slots finished while already running
-wire go    = rise || ac_go;
+wire ss_go = restore && reset_n;                            // wake while running
+wire go    = rise || ac_go || ss_go;
 
 always @(posedge clk) begin
     rst_r <= reset_n;
@@ -79,6 +88,12 @@ always @(posedge clk) begin
     if (rise)                 n_rise <= n_rise + 1'b1;
     if (!reset_n && rst_r)    n_fall <= n_fall + 1'b1;
     if (allcomplete && !ac_r) n_ac   <= n_ac + 1'b1;
+    if (saved)                n_save <= n_save + 1'b1;
+    if (restore) begin
+        n_load <= n_load + 1'b1;
+        load_in_reset <= !reset_n;
+        if (!reset_n) ld_pending <= 1'b1;                   // booted at reset exit
+    end
 
     if (bridge_wr && hit) begin
         n_wr <= n_wr + 1'b1;
@@ -103,7 +118,8 @@ always @(posedge clk) begin
             3'd4: rd_data <= {n_rise, n_fall, n_ac, n_boot};          // reset exits, enters, all-completes, boots
             3'd5: rd_data <= {n_wr, n_wr_run};                        // slot writes: all, while running
             3'd6: rd_data <= w2_at_boot;                              // word 2 as loaded, at the last boot
-            3'd7: rd_data <= {n_rd, 13'd0, valid_at_boot, fresh_at_boot, booted};
+            3'd7: rd_data <= {n_rd, n_save, n_load, load_in_reset, boot_restore, 3'd0,
+                              valid_at_boot, fresh_at_boot, booted};
         endcase
     end
 
@@ -116,6 +132,8 @@ always @(posedge clk) begin
         n_boot <= n_boot + 1'b1;
         if (ac_go) ac_boot <= 1'b1;
         w2_at_boot <= w2; valid_at_boot <= valid; fresh_at_boot <= fresh;
+        boot_restore <= ss_go || (rise && ld_pending);
+        ld_pending <= 1'b0;
         if (fresh && valid) begin
             boot_t <= w2[23:16]; boot_b <= w2[15:0]; boot_s <= w3[15:0];
         end else if (booted) begin

@@ -376,6 +376,15 @@ wire        m9_cap_hit, m9_rec_hit;
 wire [31:0] m9_cap_rd, m9_rec_rd;
 assign port_ir_rx_disable = !m9_listen;
 
+// Sleep (core.json "sleep_supported"): APF's save state is a 0x80-byte window
+// at 0x2000_0000 aliased onto the save file's device block and recent list
+// (lib/sleep_state.v), so sleep / wake keeps the device and the recent list.
+//   +0x00..0x1F -> 0x1000_0000.. (dev_save)   +0x20..0x7F -> 0x1000_8040.. (recent)
+// The receiver capture is not part of it.
+localparam [31:0] SS_ADDR = 32'h2000_0000, SS_SIZE = 32'h80;
+wire [31:0] sv_addr;                    // bridge_addr, window aliased (sleep_state)
+wire        ss_saved, ss_restore;
+
 // bridge endianness
 assign bridge_endian_little = 0;
 
@@ -466,6 +475,9 @@ always @(*) begin
         bridge_rd_data <= m9_cap_hit ? m9_cap_rd     // receiver capture (ir/ir_rx_cap.v)
                         : m9_rec_hit ? m9_rec_rd     // recent devices (lib/recent.v)
                                      : m7_save_rd;   // saved device (lib/dev_save.v)
+    end
+    32'h20xxxxxx: begin
+        bridge_rd_data <= m9_rec_hit ? m9_rec_rd : m7_save_rd;   // save state (sleep, aliased)
     end
     32'hF8xxxxxx: begin
         bridge_rd_data <= cmd_bridge_rd_data;
@@ -645,7 +657,9 @@ dev_save #(.ADDR(32'h1000_0000), .LIB_ID(IR_LIB_ID), .LIB_ID_V1(IR_LIB_ID_V1),
     .clk            ( clk_74a ),
     .reset_n        ( reset_n ),
     .allcomplete    ( dataslot_allcomplete ),
-    .bridge_addr    ( bridge_addr ),
+    .saved          ( ss_saved ),
+    .restore        ( ss_restore ),
+    .bridge_addr    ( sv_addr ),
     .bridge_wr      ( bridge_wr ),
     .bridge_wr_data ( bridge_wr_data ),
     .bridge_rd      ( bridge_rd ),
@@ -681,12 +695,35 @@ recent #(.ADDR(32'h1000_8040), .LIB_ID(IR_LIB_ID)) recent_m9 (
     .count          ( m9_recent_n ),
     .idx            ( m9_dl_idx[4:0] ),
     .entry          ( m9_dl_recent ),
-    .bridge_addr    ( bridge_addr ),
+    .bridge_addr    ( sv_addr ),
     .bridge_wr      ( bridge_wr ),
     .bridge_wr_data ( bridge_wr_data ),
     .bridge_rd      ( bridge_rd ),
     .rd_data        ( m9_rec_rd ),
     .rd_hit         ( m9_rec_hit )
+);
+
+// Sleep / wake: APF save-state handshake (see the sleep block above)
+sleep_state #(.ADDR(SS_ADDR), .SIZE(SS_SIZE), .DEV_ADDR(32'h1000_0000), .REC_ADDR(32'h1000_8040)) sleep_state_s (
+    .clk            ( clk_74a ),
+    .bridge_addr    ( bridge_addr ),
+    .sv_addr        ( sv_addr ),
+    .supported      ( savestate_supported ),
+    .addr           ( savestate_addr ),
+    .size           ( savestate_size ),
+    .maxloadsize    ( savestate_maxloadsize ),
+    .start          ( savestate_start ),
+    .start_ack      ( savestate_start_ack ),
+    .start_busy     ( savestate_start_busy ),
+    .start_ok       ( savestate_start_ok ),
+    .start_err      ( savestate_start_err ),
+    .load           ( savestate_load ),
+    .load_ack       ( savestate_load_ack ),
+    .load_busy      ( savestate_load_busy ),
+    .load_ok        ( savestate_load_ok ),
+    .load_err       ( savestate_load_err ),
+    .saved          ( ss_saved ),
+    .restore        ( ss_restore )
 );
 
 

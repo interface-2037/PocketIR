@@ -72,7 +72,7 @@ wire        boot;
 wire [7:0]  boot_t, cur_t;
 wire [15:0] boot_b, boot_s, cur_b, cur_s;
 dev_save #(.LIB_ID(IR_LIB_ID), .LIB_ID_V1(IR_LIB_ID_V1), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) sav (
-    .clk(clk), .reset_n(reset_n), .allcomplete(1'b1), .bridge_addr(baddr), .bridge_wr(1'b0), .bridge_wr_data(32'd0), .bridge_rd(brd),
+    .clk(clk), .reset_n(reset_n), .allcomplete(1'b1), .saved(1'b0), .restore(1'b0), .bridge_addr(baddr), .bridge_wr(1'b0), .bridge_wr_data(32'd0), .bridge_rd(brd),
     .rd_data(save_rd), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s),
     .boot(boot), .boot_t(boot_t), .boot_b(boot_b), .boot_s(boot_s),
     .datatable_addr(), .datatable_wren(), .datatable_data());

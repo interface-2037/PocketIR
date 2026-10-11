@@ -13,6 +13,9 @@
 // from another library build would name other devices). Reads are latched on
 // bridge_rd and always return the live list (before the first boot, that is
 // the loaded file, unchanged).
+// Sleep: on wake APF writes a save state (sleep_state.v) into the same
+// registers while the core may be running, so a write stops tracking until
+// the next `boot` (sent after the load) has validated the new list.
 
 module recent #(
     parameter [31:0] ADDR   = 32'h1000_8040,
@@ -66,7 +69,7 @@ always @(posedge clk) begin
         rd_data <= (off == 0) ? h_magic : (off == 4) ? h_lib : (off == 8) ? {27'd0, count} :
                    (off < 32'h10) ? 32'd0 : e[widx[4:0]];
     end
-    if (bridge_wr && hit) begin                     // APF loads the file (core in reset)
+    if (bridge_wr && hit) begin                     // APF loads the file or a save state
         if (off == 0) h_magic <= bridge_wr_data;
         else if (off == 4) h_lib <= bridge_wr_data;
         else if (off == 8) count <= (bridge_wr_data > N) ? 5'd31 : bridge_wr_data[4:0];   // 31: invalid
@@ -78,6 +81,8 @@ always @(posedge clk) begin
         if (h_magic != MAGIC || h_lib != LIB_ID || count > N) begin
             h_magic <= MAGIC; h_lib <= LIB_ID; count <= 5'd0;
         end
+    end else if (bridge_wr && hit) begin            // list being replaced: wait for boot
+        tracking <= 1'b0; settle <= 3'd0;
     end else if (settle != 3'd0) begin
         settle <= settle - 1'b1;
         if (settle == 3'd1) tracking <= 1'b1;

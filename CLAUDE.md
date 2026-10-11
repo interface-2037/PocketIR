@@ -86,6 +86,7 @@ src/fpga/core/
     ir_match.v          # M9: identify a remote: compare the capture with every library code
     recent.v            # M9: last 20 devices (save file, after the capture)
     dev_save.v          # current device <-> nonvolatile save slot (data.json slot 0, pocketir.sav; file = device block + capture + recent list)
+    sleep_state.v       # sleep/wake: APF save-state handshake; 0x80-byte window at 0x2000_0000 aliased onto device block + recent list
   ui/
     ui_video.v          # 400x360 video: RLE picture ROM + palette + highlights + menu background
     ui_text.v           # runtime text layer (32 slots, Inter fonts)
@@ -100,7 +101,7 @@ tools/
 sim/
   run.ps1               # runs tools/**/test_*.py, then every tb_*.v
   tb_ir_engine.v, tb_remote.v (menu + library + buttons + learning + recent), tb_dev_save.v, tb_ui_video.v,
-  tb_rx_cap.v, tb_rx_marks.v, tb_ir_synth.v, tb_ir_match.v, tb_recent.v
+  tb_rx_cap.v, tb_rx_marks.v, tb_ir_synth.v, tb_ir_match.v, tb_recent.v, tb_sleep.v
 ```
 
 ---
@@ -238,6 +239,12 @@ Design constraints:
   - Save file: device block, raw capture (diagnosis), recent list; 0x80A0 bytes. The library id is now a CRC of the device data only; the v0.10.0 id is still accepted, so the saved device survives the update.
   - The `menu.v` timing fix from the separate "shorten critical path" task (cursor stored one cycle later, `Q_SCROLL`) is included here.
 - **Done when:** pointing the Sony and Samsung remotes at the Pocket lists their devices and switching to a match works; the recent list survives a restart.
+
+### Sleep mode (v0.12.0, 2026-10-11): built, awaiting hardware test
+- `core.json` `"sleep_supported": true`. APF's sleep/wake uses the save-state host commands 0xA0 / 0xA4 (Analogue docs).
+- The save state is 0x80 bytes at `0x2000_0000`, aliased by `lib/sleep_state.v` onto the save file's device block (+0x00) and recent list (+0x20). The receiver capture is left out. Waking restores the device and the recent list. The menu screen is not restored.
+- Wake: APF writes the blob, then sends load (agg23's NES core relies on this order). Load while running → `dev_save` boots it at once; load in reset → the reset exit boots it. Which one happens is still [Unknown]. `read_save.py` prints the sleep diagnostics (save-state count, load count, load-in-reset, last boot from a save state).
+- To check on hardware: sleep and wake keep the device and the recent list; IR works after wake; whether Memories appears.
 
 ### M10 — External emitter: dropped (interface2037, 2026-10-11)
 - An IR LED add-on on the link port (for room range) was considered and dropped from the plan. The short range of the built-in LED is accepted.
