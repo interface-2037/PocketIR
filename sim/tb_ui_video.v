@@ -42,7 +42,7 @@ ui_video #(
     .slot_we(slot_we), .slot_waddr(slot_waddr), .slot_wdata(slot_wdata),
     .str_we(str_we), .str_waddr(str_waddr), .str_wdata(str_wdata),
     .menu_on_sys(menu_on), .menu_bar_sys(menu_bar), .menu_scroll_sys(menu_scroll),
-    .menu_h0_sys(menu_h0), .menu_h1_sys(menu_h1),
+    .menu_h0_sys(menu_h0), .menu_h1_sys(menu_h1), .menu_div_sys(menu_div),
     .rgb(rgb), .de(de), .hs(hs), .vs(vs), .skip(skip), .underflow(underflow));
 
 reg [23:0] exp_idle  [0:N-1];
@@ -54,14 +54,14 @@ reg [4:0]  slot_waddr = 0;
 reg [31:0] slot_wdata = 0;
 reg [9:0]  str_waddr = 0;
 reg [7:0]  str_wdata = 0;
-reg [3:0]  menu_bar = 4'd15;
+reg [3:0]  menu_bar = 4'd15, menu_div = 4'd15;
 reg [8:0]  menu_h0 = 0, menu_h1 = 0;
 
 task write_menu_page;                   // build/ui_expected/menu_page.txt -> slots + menu inputs
-    integer fd, rc, k, i, w, len, c, bar, sc, h0, h1;
+    integer fd, rc, k, i, w, len, c, bar, sc, h0, h1, dv;
     begin
         fd = $fopen("build/ui_expected/menu_page.txt", "r");
-        rc = $fscanf(fd, "%d %d %d %d", bar, sc, h0, h1);
+        rc = $fscanf(fd, "%d %d %d %d %d", bar, sc, h0, h1, dv);
         for (k = 0; k < 32; k = k + 1) begin
             rc = $fscanf(fd, "%h %d", w, len);
             @(negedge clk_sys); slot_we = 1; slot_waddr = k; slot_wdata = w;
@@ -73,7 +73,7 @@ task write_menu_page;                   // build/ui_expected/menu_page.txt -> sl
             end
         end
         $fclose(fd);
-        menu_bar = bar; menu_scroll = sc; menu_h0 = h0; menu_h1 = h1; menu_on = 1;
+        menu_bar = bar; menu_scroll = sc; menu_h0 = h0; menu_h1 = h1; menu_div = dv; menu_on = 1;
     end
 endtask
 integer errors = 0;

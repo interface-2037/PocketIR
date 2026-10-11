@@ -8,9 +8,12 @@
 //  3. Chord: opens / closes the menu and sends nothing; Start alone (held)
 //     still sends POWER.
 //  4. The menu script build/ir_expected/menu_steps.txt (tools/ui/test_menu.py,
-//     from the Python model ui_menu.Menu): after every key, open/level, the
-//     LOAD/CODES commands issued, TEST sends, and the whole page (32 text
-//     slots, highlight row, scroll thumb) must match.
+//     from the Python model ui_menu.Menu): after every key or remote button,
+//     open/level, the LOAD/CODES commands issued, TEST sends, and the whole
+//     page (32 text slots, highlight row, scroll thumb, divider) must match.
+//     M9: the home rows, the recent list (recent.v) and learning, where each
+//     remote button's captured intervals go to the real lib/ir_match.v over
+//     the library ROM (as ir_rx_marks.v would deliver them).
 //  5. The script chooses Samsung TV set 1: table and slots equal
 //     dev_samsung.txt, and L1 sends Samsung32 device 7 command 7.
 //  6. The save slot (dev_save.v) boots Sony when empty and reads back Samsung.
@@ -39,7 +42,23 @@ wire [31:0] slot_wdata;
 wire [9:0]  str_waddr;
 wire [7:0]  str_wdata;
 wire        dc_start, dc_dir, scroll_on;
-wire [1:0]  dc_cmd, dc_level;
+wire [1:0]  dc_cmd;
+wire [2:0]  dc_level;
+wire [3:0]  div_row;
+wire [1:0]  dc_msg, m_result;
+wire [7:0]  dc_buttons, ent_t;
+wire [15:0] ent_b, ent_s, match_n;
+wire [4:0]  recent_n;
+wire        listen, rx_hold, m_start, m_narrow, m_done, mt_busy, dl_match;
+wire [9:0]  dl_idx;
+wire [31:0] dl_recent, dl_mq;
+wire [15:0] lib2_addr;
+wire [7:0]  lib2_q, iv_addr;
+reg         burst = 0;
+reg  [8:0]  n_iv = 0;
+reg  [15:0] ivmem [0:255];
+reg  [15:0] iv_q = 0;
+always @(posedge clk) iv_q <= ivmem[iv_addr];
 wire [7:0]  dc_t;
 wire [15:0] dc_b, dc_s, dc_cur, dc_top, n_items, jump_res;
 wire [8:0]  h0, h1;
@@ -52,7 +71,7 @@ wire [31:0] save_rd;
 wire        boot;
 wire [7:0]  boot_t, cur_t;
 wire [15:0] boot_b, boot_s, cur_b, cur_s;
-dev_save #(.LIB_ID(IR_LIB_ID), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) sav (
+dev_save #(.LIB_ID(IR_LIB_ID), .LIB_ID_V1(IR_LIB_ID_V1), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) sav (
     .clk(clk), .reset_n(reset_n), .allcomplete(1'b1), .bridge_addr(baddr), .bridge_wr(1'b0), .bridge_wr_data(32'd0), .bridge_rd(brd),
     .rd_data(save_rd), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s),
     .boot(boot), .boot_t(boot_t), .boot_b(boot_b), .boot_s(boot_s),
@@ -61,14 +80,29 @@ dev_save #(.LIB_ID(IR_LIB_ID), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S
 menu #(.CLK_HZ(1_000_000), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) mnu (
     .clk(clk), .boot(boot), .boot_t(boot_t), .boot_b(boot_b), .boot_s(boot_s),
     .kf(kf), .chord(chord), .open(open), .busy(mbusy), .test_key(test_key),
-    .bar_row(bar_row), .dev_t(cur_t), .dev_b(cur_b), .dev_s(cur_s),
+    .bar_row(bar_row), .div_row(div_row), .dev_t(cur_t), .dev_b(cur_b), .dev_s(cur_s),
     .dc_start(dc_start), .dc_cmd(dc_cmd), .dc_level(dc_level), .dc_t(dc_t), .dc_b(dc_b), .dc_s(dc_s),
-    .dc_cur(dc_cur), .dc_top(dc_top), .dc_dir(dc_dir), .dc_busy(dbusy),
-    .n_items(n_items), .jump_res(jump_res));
+    .dc_cur(dc_cur), .dc_top(dc_top), .dc_dir(dc_dir), .dc_msg(dc_msg), .dc_buttons(dc_buttons),
+    .dc_busy(dbusy), .n_items(n_items), .jump_res(jump_res), .ent_t(ent_t), .ent_b(ent_b), .ent_s(ent_s),
+    .recent_n(recent_n), .listen(listen), .rx_hold(rx_hold), .burst(burst),
+    .m_start(m_start), .m_narrow(m_narrow), .m_done(m_done), .m_result(m_result));
+
+recent #(.LIB_ID(IR_LIB_ID)) rec (
+    .clk(clk), .boot(boot), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s), .count(recent_n),
+    .idx(dl_idx[4:0]), .entry(dl_recent), .bridge_addr(32'd0), .bridge_wr(1'b0), .bridge_wr_data(32'd0),
+    .bridge_rd(1'b0), .rd_data(), .rd_hit());
+
+ir_match #(.PROG_FILE("src/fpga/core/ir/ir_proto.hex")) mtch (
+    .clk(clk), .start(m_start), .narrow(m_narrow), .n_iv(n_iv), .iv_addr(iv_addr), .iv_q(iv_q),
+    .lib_addr(lib2_addr), .lib_q(lib2_q), .busy(mt_busy), .done(m_done), .result(m_result),
+    .n_match(match_n), .list_raddr(dl_idx), .list_q(dl_mq));
 
 dev_ctrl #(.LIB_FILE("src/fpga/core/lib/ir_lib.hex")) dev (
     .clk(clk), .start(dc_start), .cmd(dc_cmd), .level(dc_level), .dev_t(dc_t), .dev_b(dc_b),
-    .dev_s(dc_s), .cur(dc_cur), .top(dc_top), .dir(dc_dir), .busy(dbusy), .n_items(n_items),
+    .dev_s(dc_s), .cur(dc_cur), .top(dc_top), .dir(dc_dir), .msg(dc_msg), .buttons(dc_buttons),
+    .recent_n(recent_n), .match_n(match_n), .busy(dbusy), .n_items(n_items),
+    .dl_idx(dl_idx), .dl_match(dl_match), .dl_q(dl_match ? dl_mq : dl_recent),
+    .ent_t(ent_t), .ent_b(ent_b), .ent_s(ent_s), .lib2_addr(lib2_addr), .lib2_q(lib2_q),
     .scroll_on(scroll_on), .scroll_h0(h0), .scroll_h1(h1), .jump_res(jump_res),
     .func(func), .code_valid(cvalid), .code_proto(cproto), .code_d(cd), .code_f(cf),
     .slot_we(slot_we), .slot_waddr(slot_waddr), .slot_wdata(slot_wdata),
@@ -161,7 +195,7 @@ endfunction
 task settle;                       // until menu, library and engine are all idle
     begin
         repeat (200) @(negedge clk);
-        while (mbusy || dbusy || busy || rem.cs != 3'd0) @(negedge clk);
+        while (mbusy || dbusy || busy || mt_busy || rem.cs != 3'd0) @(negedge clk);
         repeat (3 * T) @(negedge clk);
     end
 endtask
@@ -232,7 +266,11 @@ endtask
 // ---------------- press a menu function (names as in ui_menu.Menu.press)
 task press(input [8*8-1:0] key);
     begin
-        if (key == "CHORD") begin keys = 16'hC000; repeat (100) @(negedge clk); keys = 0; end
+        if (key == "BURST") begin                   // a remote button: intervals already in ivmem
+            @(negedge clk) burst = 1; @(negedge clk) burst = 0;
+            repeat (20) @(negedge clk);
+        end
+        else if (key == "CHORD") begin keys = 16'hC000; repeat (100) @(negedge clk); keys = 0; end
         else begin
             keys = (key == "UP")    ? 16'h0002 : (key == "DOWN")  ? 16'h0001 :
                    (key == "LEFT")  ? 16'h0008 : (key == "RIGHT") ? 16'h0004 :
@@ -246,7 +284,7 @@ task press(input [8*8-1:0] key);
 endtask
 
 integer fd, rc, nsteps, st, bt, bb, bs, e_open, e_level, e_test, e_load, e_codes, e_t, e_b, e_s;
-integer bar, sc, eh0, eh1, bad, s0, k, f, n_up, n_down, switched, n_pow;
+integer bar, sc, eh0, eh1, ediv, bad, s0, k, f, n_up, n_down, switched, n_pow, niv, x;
 reg [8*8-1:0] key;
 initial begin
     for (k = 0; k < 1024; k = k + 1) strm[k] = 8'hFF;
@@ -302,12 +340,18 @@ initial begin
     rc = $fscanf(fd, "%d %d %d %d\n", nsteps, bt, bb, bs);
     for (st = 0; st < nsteps; st = st + 1) begin
         rc = $fscanf(fd, "%s %d %d %d %d %d %d %d %d\n", key, e_open, e_level, e_test, e_load, e_codes, e_t, e_b, e_s);
+        if (key == "BURST") begin
+            rc = $fscanf(fd, "%d", niv);
+            for (k = 0; k < niv; k = k + 1) begin rc = $fscanf(fd, "%d", x); ivmem[k] = x; end
+            n_iv = niv;
+        end
         saw_load = 0; saw_codes = 0; sends = 0;
         press(key);
         bad = 0;
         if (open !== e_open[0] || (e_open && mnu.level !== e_level)) begin
             $display("  step %0d (%0s): open %b level %0d, exp %0d %0d", st, key, open, mnu.level, e_open, e_level); bad = bad + 1;
         end
+        if (saw_codes) begin last_t = ent_t; last_b = ent_b; last_s = ent_s; end   // the device CODES loaded
         if (saw_load !== e_load[0] || saw_codes !== e_codes[0] ||
             ((e_load || e_codes) && (last_t !== e_t || last_b !== e_b || last_s !== e_s))) begin
             $display("  step %0d (%0s): load %b codes %b (%0d %0d %0d), exp %0d %0d (%0d %0d %0d)", st, key,
@@ -316,10 +360,10 @@ initial begin
         if (e_open && e_test && sends != 1) begin $display("  step %0d: TEST sent %0d times", st, sends); bad = bad + 1; end
         if (e_open && !e_test && sends != 0) begin $display("  step %0d: menu sent IR without TEST", st); bad = bad + 1; end
         if (e_open) begin
-            rc = $fscanf(fd, "%d %d %d %d\n", bar, sc, eh0, eh1);
-            if (bar_row !== bar || scroll_on !== sc[0] || (sc && (h0 !== eh0 || h1 !== eh1))) begin
-                $display("  step %0d (%0s): bar %0d scroll %b %0d-%0d, exp %0d %0d %0d-%0d", st, key,
-                         bar_row, scroll_on, h0, h1, bar, sc, eh0, eh1); bad = bad + 1;
+            rc = $fscanf(fd, "%d %d %d %d %d\n", bar, sc, eh0, eh1, ediv);
+            if (bar_row !== bar || div_row !== ediv || scroll_on !== sc[0] || (sc && (h0 !== eh0 || h1 !== eh1))) begin
+                $display("  step %0d (%0s): bar %0d div %0d scroll %b %0d-%0d, exp %0d %0d %0d %0d-%0d", st, key,
+                         bar_row, div_row, scroll_on, h0, h1, bar, ediv, sc, eh0, eh1); bad = bad + 1;
             end
             check_slots(fd, 32, "menu", s0);
             if (s0) $display("  step %0d (%0s): %0d page mismatches", st, key, s0);

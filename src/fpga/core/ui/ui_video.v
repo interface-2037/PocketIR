@@ -46,6 +46,7 @@ module ui_video #(
     input  wire        menu_scroll_sys,   // draw the scroll thumb
     input  wire [8:0]  menu_h0_sys,       // thumb rows [h0, h1)
     input  wire [8:0]  menu_h1_sys,
+    input  wire [3:0]  menu_div_sys,      // 1-px divider above this row (M9 home list), 15 = none
     output reg  [23:0] rgb = 24'd0,
     output reg         de  = 1'b0,
     output reg         hs  = 1'b0,
@@ -204,21 +205,23 @@ end
 // Menu settings cross from clk_sys with a 2-flop synchroniser per bit and are
 // taken over at the start of each frame, so a frame never mixes old and new.
 `include "ui_menu.vh"
-reg [23:0] ms1 = 0, ms2 = 0;              // {on, bar[3:0], scroll, h0[8:0], h1[8:0]}
+reg [27:0] ms1 = 0, ms2 = 0;              // {on, bar[3:0], scroll, h0[8:0], h1[8:0], div[3:0]}
 reg        m_on = 1'b0, m_scroll = 1'b0;
-reg [3:0]  m_bar = 4'd15;
+reg [3:0]  m_bar = 4'd15, m_div = 4'd15;
 reg [8:0]  m_h0 = 0, m_h1 = 0;
 always @(posedge clk) begin
-    ms1 <= {menu_on_sys, menu_bar_sys, menu_scroll_sys, menu_h0_sys, menu_h1_sys};
+    ms1 <= {menu_on_sys, menu_bar_sys, menu_scroll_sys, menu_h0_sys, menu_h1_sys, menu_div_sys};
     ms2 <= ms1;
-    if (vs0) {m_on, m_bar, m_scroll, m_h0, m_h1} <= ms2;
+    if (vs0) {m_on, m_bar, m_scroll, m_h0, m_h1, m_div} <= ms2;
 end
 
 // colour of pixel t (vx, vy) in menu mode; aligned with the picture at t+2
 wire in_x   = (vx >= MENU_BAR_X0) && (vx < MENU_BAR_X1);
 wire [9:0] bar_y0 = MENU_ROW_Y0 - 10'd12 + m_bar * MENU_ROW_H;
 wire on_bar = (m_bar != 4'd15) && in_x && (vy >= bar_y0) && (vy < bar_y0 + 10'd24);
-wire on_sep = in_x && (vy == MENU_SEP_Y0 || vy == MENU_SEP_Y1);
+localparam [9:0] DIV_Y0 = MENU_ROW_Y0 + MENU_DIV_DY;        // signed sum of constants: no unsigned wrap
+wire [9:0] div_y = DIV_Y0 + m_div * MENU_ROW_H;
+wire on_sep = in_x && (vy == MENU_SEP_Y0 || vy == MENU_SEP_Y1 || (m_div != 4'd15 && vy == div_y));
 wire on_thm = m_scroll && (vx == MENU_SCROLL_X || vx == MENU_SCROLL_X + 1) && (vy >= m_h0) && (vy < m_h1);
 wire [24:0] menu_px = {m_on, on_bar ? TXT_COL4 : on_thm ? TXT_COL3 : on_sep ? MENU_BAR : MENU_BG};
 reg  [24:0] menu1 = 0, menu2 = 0;

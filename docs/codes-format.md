@@ -72,3 +72,12 @@ Functions (bit order): 0 POWER, 1 VOL_UP, 2 VOL_DOWN, 3 MUTE, 4 UP, 5 DOWN,
 
 D and F are the engine's packed fields (`irproto.Protocol.pack`); for every
 protocol except Kaseikyo they equal Flipper's address and command.
+
+## Library id (save files)
+The save file (`lib/dev_save.v`, `lib/recent.v`) stores devices as
+{type, brand, set} indices, so it also stores a **library id** and is only
+used with a matching library. The id is the CRC-32 of the device data only
+(`library.device_id`: types, brands, sets, codes, labels), so changing UI
+strings (`CONSTS`) doesn't invalidate saves. Builds up to v0.10.0 stored the
+CRC of the whole image (`FD097E4D`); `ir_lib.vh` exports it as `IR_LIB_ID_V1`
+and `dev_save` accepts it while the device data is unchanged since then.

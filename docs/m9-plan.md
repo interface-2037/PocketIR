@@ -43,7 +43,9 @@ Raw capture of a Sony STR-DH790 remote (`tools/ir/fixtures/rx_v0.10.0_sony_power
    Stored in the save file and cleared when the library id changes.
 4. **Menu.** Level 0 gets RECENT DEVICES and LEARN FROM REMOTE above the types,
    with a divider line. New screens: recent list, learn (listening + result),
-   matches list (POWER TEST, ENTER USE, BACK RETRY). Reference model in
+   matches list (POWER TEST, ENTER USE, BACK RETRY). Match-list subtitle:
+   "<n> BUTTON(S): TAP MORE TO NARROW" (the Pocket can't name a code that
+   matched nothing, so no protocol/code is shown). Reference model in
    `tools/ui/ui_menu.py`, checked by `tb_remote`; `dev_ctrl` draws the pages.
 5. **Save file:** device block 0x0000, receiver capture 0x0020, recent list
    0x8040 (header + 20 words); size 0x80A0.
@@ -52,13 +54,14 @@ Mockups: `docs/ui/m9_*.png` (`tools/ui/ui_m9.py`).
 
 ## Steps
 1. Done: v0.10.0 raw capture, receiver measured, Python matcher proven on it.
-2. Mockups and interface2037's review. **← now**
-3. `ir_rx_marks` + `ir_synth` + `ir_match`, simulated against `rxcap.py`.
-4. `recent.v` + save layout, simulated.
-5. Menu model, then `menu.v` / `dev_ctrl.v` / `ui_video` divider, simulated
-   against the model. Starts after the `menu.v` timing fix (separate task) lands.
+2. Done: mockups approved (2026-10-11; the remote is pointed at the bottom edge).
+3. Done: `ir_rx_marks` + `ir_synth` + `ir_match`, simulated against `rxcap.py`.
+4. Done: `recent.v` + save layout, simulated.
+5. Done: menu model, then `menu.v` / `dev_ctrl.v` / `ui_video` divider,
+   simulated against the model (`tb_remote`: 78 steps incl. 6 remote buttons).
+   The separate `menu.v` timing fix (Q_SCROLL) is folded in.
 6. Build v0.11.0. Hardware test: identify the Sony and Samsung remotes, pick
-   the match, check the recent list survives a restart.
+   the match, check the recent list survives a restart. **← now**
 
 ## Risks
 - Range is ~3 in, so the instructions say "1 to 3 inches".

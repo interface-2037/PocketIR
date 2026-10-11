@@ -26,32 +26,10 @@ def check(cond, what):
         errors.append(what)
 
 
-def envelope(name, d, f, t=0, frames=1, stretch_us=0):
-    """Reference press as envelope runs (1 = mark, clocks), from the first mark;
-    marks longer and spaces shorter by stretch_us (demodulating receivers do this)."""
-    p = ir.PROTOCOLS[name]
-    u = ir.tick_cycles()
-    out = []
-    for i in range(max(frames, p.min_frames)):
-        ops = p.frame if (i == 0 or p.repeat is None) else p.repeat
-        for lvl, n in ir.frame_ticks(p, ops, d, f, t):
-            if out and out[-1][0] == lvl:
-                out[-1] = (lvl, out[-1][1] + n * u)
-            else:
-                out.append((lvl, n * u))
-    while out and out[0][0] == 0:
-        out.pop(0)
-    s = round(stretch_us * CLK / 1e6)
-    return [(lvl, n + s if lvl else n - s) for lvl, n in out]
+envelope = rxcap.envelope
 
 
-def capture(env, idle, raw=None, duty=0.33):
-    """Envelope -> one buffer's entries as the RTL records them."""
-    if raw:
-        runs = rxcap.modulate(env, raw, duty, idle)
-    else:
-        runs = [(1 - idle if lvl else idle, n) for lvl, n in env]
-    return rxcap.entries_from_runs(runs, idle)
+capture = rxcap.capture
 
 
 def save_file(bufs, active):
@@ -151,26 +129,7 @@ for name, p in ir.PROTOCOLS.items():
 
 # ---- 8. mark-start matching, edge-only receiver (hardware v0.10.0: carrier pulses for the
 #         first ~100-300 us of each mark only, idle high)
-def edge_only(env, onset_us=120, jitter_us=0, seed=1):
-    """Envelope -> what the Pocket's receiver shows: carrier pulses at each mark's start only;
-    each mark start moved by up to +-jitter_us."""
-    r = random.Random(seed)
-    on = round(onset_us * CLK / 1e6)
-    out, carry = [], 0
-    for lvl, n in env:
-        n += carry
-        carry = 0
-        if lvl:
-            j = round(r.uniform(-jitter_us, jitter_us) * CLK / 1e6)
-            if out:
-                out[-1] = (0, out[-1][1] + j)
-            n -= j
-            out += [(1, min(n, on)), (0, n - min(n, on))]
-        elif out and out[-1][0] == 0:
-            out[-1] = (0, out[-1][1] + n)
-        else:
-            out.append((0, n))
-    return capture([(lvl, n) for lvl, n in out if n > 0], idle=1, raw=40_000, duty=0.5)
+edge_only = rxcap.edge_only
 
 
 def starts_of(entries):

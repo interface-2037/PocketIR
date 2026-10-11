@@ -7,7 +7,7 @@
 //
 // Save file, big-endian 32-bit words (bridge_endian_little = 0):
 //   0  MAGIC "IRS1"
-//   1  LIB_ID      CRC-32 of the library image (ir_lib.vh)
+//   1  LIB_ID      library id (ir_lib.vh: CRC of the device data; LIB_ID_V1 also accepted)
 //   2  {8'd0, type[7:0], brand[15:0]}
 //   3  {16'd0, code set[15:0]}
 //   4..7 diagnostics: the start-up sequence as the core saw it (see the read mux)
@@ -29,6 +29,7 @@
 module dev_save #(
     parameter [31:0] ADDR   = 32'h1000_0000,
     parameter [31:0] LIB_ID = 32'd0,
+    parameter [31:0] LIB_ID_V1 = LIB_ID,    // also accepted: the id older builds saved (ir_lib.vh)
     parameter [7:0]  BOOT_T = 8'd0,
     parameter [15:0] BOOT_B = 16'd0,
     parameter [15:0] BOOT_S = 16'd0,
@@ -60,7 +61,7 @@ localparam [31:0] MAGIC = 32'h49525331;      // "IRS1"
 wire       hit = (bridge_addr[31:5] == ADDR[31:5]);
 reg [31:0] w0 = 32'd0, w1 = 32'd0, w2 = 32'd0, w3 = 32'd0;
 reg        booted = 1'b0, fresh = 1'b0, rst_r = 1'b0, ac_r = 1'b0, ac_boot = 1'b0;
-wire       valid = (w0 == MAGIC && w1 == LIB_ID);
+wire       valid = (w0 == MAGIC && (w1 == LIB_ID || w1 == LIB_ID_V1));
 
 // diagnostics
 reg [7:0]  n_rise = 0, n_fall = 0, n_ac = 0, n_boot = 0;

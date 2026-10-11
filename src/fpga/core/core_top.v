@@ -259,10 +259,27 @@ wire [15:0] m7_kf;
 wire        m7_open, m7_test_key;
 wire [3:0]  m7_bar_row;
 wire        m7_dc_start, m7_dc_dir, m7_scroll_on;
-wire [1:0]  m7_dc_cmd, m7_dc_level;
+wire [1:0]  m7_dc_cmd;
+wire [2:0]  m7_dc_level;
 wire [7:0]  m7_dc_t;
 wire [15:0] m7_dc_b, m7_dc_s, m7_dc_cur, m7_dc_top, m7_n_items, m7_jump_res;
 wire [8:0]  m7_h0, m7_h1;
+
+// M9: identify a remote (LEARN FROM REMOTE) and the recent-devices list.
+// The receiver is powered only while the learn / match screens are open
+// (menu.v `listen`). ir_rx_marks turns it into mark-start intervals; each
+// burst runs ir_match over the library (second ROM port of dev_ctrl), whose
+// match list the menu shows. recent.v keeps the last 20 devices in the save
+// file. ir_rx_cap still records the raw edges (save file) for diagnosis.
+wire [3:0]  m9_div_row;
+wire [1:0]  m9_msg, m9_result;
+wire [7:0]  m9_buttons, m9_ent_t, m9_iv_addr, m9_lib2_q;
+wire [15:0] m9_ent_b, m9_ent_s, m9_match_n, m9_lib2_addr, m9_iv_q;
+wire [4:0]  m9_recent_n;
+wire        m9_listen, m9_rx_hold, m9_burst, m9_m_start, m9_m_narrow, m9_m_done, m9_dl_match;
+wire [8:0]  m9_n_iv;
+wire [9:0]  m9_dl_idx;
+wire [31:0] m9_dl_recent, m9_dl_match_q;
 
 menu #(.BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) menu_m7 (
     .clk       ( clk_74a ),
@@ -273,14 +290,19 @@ menu #(.BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) menu_m7 (
     .open      ( m7_open ),
     .busy      ( ),
     .test_key  ( m7_test_key ),
-    .bar_row   ( m7_bar_row ),
+    .bar_row   ( m7_bar_row ), .div_row ( m9_div_row ),
     .dev_t     ( m7_cur_t ), .dev_b ( m7_cur_b ), .dev_s ( m7_cur_s ),
     .dc_start  ( m7_dc_start ), .dc_cmd ( m7_dc_cmd ), .dc_level ( m7_dc_level ),
     .dc_t      ( m7_dc_t ), .dc_b ( m7_dc_b ), .dc_s ( m7_dc_s ),
     .dc_cur    ( m7_dc_cur ), .dc_top ( m7_dc_top ), .dc_dir ( m7_dc_dir ),
+    .dc_msg    ( m9_msg ), .dc_buttons ( m9_buttons ),
     .dc_busy   ( m7_dev_busy ),
     .n_items   ( m7_n_items ),
-    .jump_res  ( m7_jump_res )
+    .jump_res  ( m7_jump_res ),
+    .ent_t     ( m9_ent_t ), .ent_b ( m9_ent_b ), .ent_s ( m9_ent_s ),
+    .recent_n  ( m9_recent_n ),
+    .listen    ( m9_listen ), .rx_hold ( m9_rx_hold ), .burst ( m9_burst ),
+    .m_start   ( m9_m_start ), .m_narrow ( m9_m_narrow ), .m_done ( m9_m_done ), .m_result ( m9_result )
 );
 
 dev_ctrl dev_ctrl_m7 (
@@ -288,6 +310,8 @@ dev_ctrl dev_ctrl_m7 (
     .start      ( m7_dc_start ), .cmd ( m7_dc_cmd ), .level ( m7_dc_level ),
     .dev_t      ( m7_dc_t ), .dev_b ( m7_dc_b ), .dev_s ( m7_dc_s ),
     .cur        ( m7_dc_cur ), .top ( m7_dc_top ), .dir ( m7_dc_dir ),
+    .msg        ( m9_msg ), .buttons ( m9_buttons ),
+    .recent_n   ( m9_recent_n ), .match_n ( m9_match_n ),
     .busy       ( m7_dev_busy ),
     .n_items    ( m7_n_items ),
     .scroll_on  ( m7_scroll_on ), .scroll_h0 ( m7_h0 ), .scroll_h1 ( m7_h1 ),
@@ -298,7 +322,33 @@ dev_ctrl dev_ctrl_m7 (
     .code_d     ( m7_code_d ),
     .code_f     ( m7_code_f ),
     .slot_we    ( m7_slot_we ),  .slot_waddr ( m7_slot_waddr ), .slot_wdata ( m7_slot_wdata ),
-    .str_we     ( m7_str_we ),   .str_waddr  ( m7_str_waddr ),  .str_wdata  ( m7_str_wdata )
+    .str_we     ( m7_str_we ),   .str_waddr  ( m7_str_waddr ),  .str_wdata  ( m7_str_wdata ),
+    .dl_idx     ( m9_dl_idx ), .dl_match ( m9_dl_match ),
+    .dl_q       ( m9_dl_match ? m9_dl_match_q : m9_dl_recent ),
+    .ent_t      ( m9_ent_t ), .ent_b ( m9_ent_b ), .ent_s ( m9_ent_s ),
+    .lib2_addr  ( m9_lib2_addr ), .lib2_q ( m9_lib2_q )
+);
+
+ir_rx_marks ir_rx_marks_m9 (
+    .clk     ( clk_74a ),
+    .enable  ( m9_listen ),
+    .rx      ( port_ir_rx ),
+    .hold    ( m9_rx_hold || m4_busy ),      // also ignore anything while our own LED sends
+    .active  ( ),
+    .done    ( m9_burst ),
+    .n_iv    ( m9_n_iv ),
+    .raddr   ( m9_iv_addr ),
+    .rq      ( m9_iv_q )
+);
+
+ir_match ir_match_m9 (
+    .clk        ( clk_74a ),
+    .start      ( m9_m_start ), .narrow ( m9_m_narrow ),
+    .n_iv       ( m9_n_iv ), .iv_addr ( m9_iv_addr ), .iv_q ( m9_iv_q ),
+    .lib_addr   ( m9_lib2_addr ), .lib_q ( m9_lib2_q ),
+    .busy       ( ),
+    .done       ( m9_m_done ), .result ( m9_result ), .n_match ( m9_match_n ),
+    .list_raddr ( m9_dl_idx ), .list_q ( m9_dl_match_q )
 );
 
 ir_remote ir_remote_m4 (
@@ -319,13 +369,12 @@ ir_remote ir_remote_m4 (
     .code_f     ( m7_code_f )
 );
 
-// M9 step 1 (diagnostic): the receiver is on and every edge it gives is
-// recorded into the save file (ir/ir_rx_cap.v, after the device block), so
-// the PC can see what port_ir_rx really outputs. The TX lamp lights while a
-// burst is being recorded. Instantiated below dev_save (needs reset_n).
-wire        m9_rx_active, m9_cap_hit;
-wire [31:0] m9_cap_rd;
-assign port_ir_rx_disable = 0;
+// M9: receiver power follows the learn / match screens. The raw-edge capture
+// (ir/ir_rx_cap.v, save file after the device block) and the recent list
+// (lib/recent.v, after the capture) are instantiated below dev_save (reset_n).
+wire        m9_cap_hit, m9_rec_hit;
+wire [31:0] m9_cap_rd, m9_rec_rd;
+assign port_ir_rx_disable = !m9_listen;
 
 // bridge endianness
 assign bridge_endian_little = 0;
@@ -415,6 +464,7 @@ always @(*) begin
     end
     32'h10xxxxxx: begin
         bridge_rd_data <= m9_cap_hit ? m9_cap_rd     // receiver capture (ir/ir_rx_cap.v)
+                        : m9_rec_hit ? m9_rec_rd     // recent devices (lib/recent.v)
                                      : m7_save_rd;   // saved device (lib/dev_save.v)
     end
     32'hF8xxxxxx: begin
@@ -587,10 +637,11 @@ core_bridge_cmd icb (
 );
 
 // M7: device save slot (see the M7 block above)
-// Save file = device block (32 bytes) + receiver capture (M9, 0x8020 bytes).
-dev_save #(.ADDR(32'h1000_0000), .LIB_ID(IR_LIB_ID),
+// Save file = device block (32 bytes) + receiver capture (M9, 0x8020 bytes)
+// + recent devices (M9, 0x60 bytes).
+dev_save #(.ADDR(32'h1000_0000), .LIB_ID(IR_LIB_ID), .LIB_ID_V1(IR_LIB_ID_V1),
            .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S),
-           .SIZE(32'h8040)) dev_save_m7 (
+           .SIZE(32'h80A0)) dev_save_m7 (
     .clk            ( clk_74a ),
     .reset_n        ( reset_n ),
     .allcomplete    ( dataslot_allcomplete ),
@@ -607,19 +658,35 @@ dev_save #(.ADDR(32'h1000_0000), .LIB_ID(IR_LIB_ID),
     .datatable_data ( datatable_data )
 );
 
-// M9 step 1: receiver capture (see the M9 block above)
+// M9: raw receiver capture for diagnosis (records only while the receiver is on)
 ir_rx_cap #(.ADDR(32'h1000_0020), .DEPTH_LOG2(12)) ir_rx_cap_m9 (
     .clk            ( clk_74a ),
-    .run            ( reset_n ),
+    .run            ( reset_n && m9_listen ),
     .rx             ( port_ir_rx ),
     .tx_busy        ( m4_busy ),
-    .active         ( m9_rx_active ),
+    .active         ( ),
     .bridge_addr    ( bridge_addr ),
     .bridge_wr      ( bridge_wr ),
     .bridge_wr_data ( bridge_wr_data ),
     .bridge_rd      ( bridge_rd ),
     .rd_data        ( m9_cap_rd ),
     .rd_hit         ( m9_cap_hit )
+);
+
+// M9: recent devices (see the M9 block above)
+recent #(.ADDR(32'h1000_8040), .LIB_ID(IR_LIB_ID)) recent_m9 (
+    .clk            ( clk_74a ),
+    .boot           ( m7_boot ),
+    .cur_t          ( m7_cur_t ), .cur_b ( m7_cur_b ), .cur_s ( m7_cur_s ),
+    .count          ( m9_recent_n ),
+    .idx            ( m9_dl_idx[4:0] ),
+    .entry          ( m9_dl_recent ),
+    .bridge_addr    ( bridge_addr ),
+    .bridge_wr      ( bridge_wr ),
+    .bridge_wr_data ( bridge_wr_data ),
+    .bridge_rd      ( bridge_rd ),
+    .rd_data        ( m9_rec_rd ),
+    .rd_hit         ( m9_rec_hit )
 );
 
 
@@ -639,8 +706,7 @@ ir_rx_cap #(.ADDR(32'h1000_0020), .DEPTH_LOG2(12)) ir_rx_cap_m9 (
 // steady for a whole IR frame burst (milliseconds), so a 2-flop synchroniser
 // per bit is enough; a one-pixel mixed value during a change is harmless.
 // Region ids match tools/ui/ui_rom.py: key bit k -> k+1 (k <= 9), Select 11,
-// Start 12; TX lamp is region 13 (driven by tx_on: sending, or M9 step 1:
-// recording a receiver burst).
+// Start 12; TX lamp is region 13 (driven by tx_on).
 reg [3:0] ui_region_74 = 4'd0;
 always @(posedge clk_74a)
     ui_region_74 <= !m4_busy || m7_open ? 4'd0 :
@@ -649,7 +715,7 @@ always @(posedge clk_74a)
 
 reg [4:0] ui_sync1 = 5'd0, ui_sync2 = 5'd0;
 always @(posedge clk_video) begin
-    ui_sync1 <= {m4_busy || m9_rx_active, ui_region_74};
+    ui_sync1 <= {m4_busy, ui_region_74};
     ui_sync2 <= ui_sync1;
 end
 
@@ -670,6 +736,7 @@ ui_video ui_video_m5 (
     .menu_scroll_sys ( m7_scroll_on ),
     .menu_h0_sys     ( m7_h0 ),
     .menu_h1_sys     ( m7_h1 ),
+    .menu_div_sys    ( m9_div_row ),
     .rgb           ( vidout_rgb ),
     .de            ( vidout_de ),
     .hs            ( vidout_hs ),

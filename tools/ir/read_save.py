@@ -19,14 +19,14 @@ print(f"{path}: {len(data)} bytes: " + " ".join(f"{x:02x}" for x in data[:32]) +
 w = struct.unpack(f">{len(data) // 4}I", data[: len(data) // 4 * 4])
 
 image = bytes(int(x, 16) for x in (ROOT / "src/fpga/core/lib/ir_lib.hex").read_text().split())
-import zlib  # noqa: E402
-lib_id = zlib.crc32(image)
+lib_id = lib.device_id(image)
+lib_ids = {lib_id, lib.V1_IMAGE_CRC if lib_id == lib.V1_DEVICE_ID else lib_id}   # see library.py
 types = lib.read_library(image)
 
 if len(w) >= 4:
     t, b, s = (w[2] >> 16) & 0xFF, w[2] & 0xFFFF, w[3] & 0xFFFF
-    ok = w[0] == 0x49525331 and w[1] == lib_id
-    print(f"magic {'ok' if w[0] == 0x49525331 else 'BAD'}, library id {'ok' if w[1] == lib_id else 'BAD'}"
+    ok = w[0] == 0x49525331 and w[1] in lib_ids
+    print(f"magic {'ok' if w[0] == 0x49525331 else 'BAD'}, library id {'ok' if w[1] in lib_ids else 'BAD'}"
           f" (file {w[1]:08x}, this build {lib_id:08x})")
     try:
         tname, brands = types[t]

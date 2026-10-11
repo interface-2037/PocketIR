@@ -742,10 +742,15 @@ set_global_assignment -name VERILOG_FILE core/core_top.v
 set_global_assignment -name VERILOG_FILE core/core_bridge_cmd.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_remote.v
 set_global_assignment -name VERILOG_FILE core/ir/ir_engine.v
+set_global_assignment -name VERILOG_FILE core/ir/ir_rx_cap.v
+set_global_assignment -name VERILOG_FILE core/ir/ir_rx_marks.v
+set_global_assignment -name VERILOG_FILE core/ir/ir_synth.v
 set_global_assignment -name SEARCH_PATH core/ir
 set_global_assignment -name VERILOG_FILE core/lib/dev_ctrl.v
 set_global_assignment -name VERILOG_FILE core/lib/menu.v
 set_global_assignment -name VERILOG_FILE core/lib/dev_save.v
+set_global_assignment -name VERILOG_FILE core/lib/ir_match.v
+set_global_assignment -name VERILOG_FILE core/lib/recent.v
 set_global_assignment -name SEARCH_PATH core/lib
 set_global_assignment -name VERILOG_FILE core/ui/ui_video.v
 set_global_assignment -name VERILOG_FILE core/ui/ui_text.v

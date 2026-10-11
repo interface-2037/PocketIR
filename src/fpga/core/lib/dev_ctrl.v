@@ -1,21 +1,25 @@
 // dev_ctrl.v
-// Library controller (M7). Walks the on-chip code library (format:
+// Library controller (M7, M9). Walks the on-chip code library (format:
 // docs/codes-format.md, built by tools/ir/library.py) for four commands:
 //
 //   LOAD  (0) device {dev_t, dev_b, dev_s}: fill the 12-entry code table and
 //             write the main-screen text slots 0..10 (title, remote model,
 //             labels; missing functions dimmed); blank slots 11..31
-//   CODES (1) the same device's code table only (menu TEST: send a set's
-//             POWER without changing the screen)
-//   PAGE  (2) menu page for {level, dev_t, dev_b, cur, top}: text slots 0..26
-//             (title, breadcrumb, counter, 9 rows of name + detail, footer
-//             hint), blank 27..31; outputs n_items and the scroll thumb
+//   CODES (1) a device's code table only (menu TEST: send its POWER without
+//             changing the screen). Level 2: {dev_t, dev_b, dev_s}; levels 3
+//             (recent) and 5 (matches): list entry `cur`, read through the
+//             dl_* port and returned on ent_*
+//   PAGE  (2) menu page for {level, dev_t, dev_b, cur, top} (levels in
+//             menu.v): text slots 0..26 (title, breadcrumb, counter, 9 rows of
+//             name + detail, footer hint) or the learn screen, blank the rest;
+//             outputs n_items and the scroll thumb
 //   JUMP  (3) brand list A-Z jump from brand `cur` of type dev_t in direction
 //             `dir` (0 back, 1 forward) -> jump_res
 //
 // References: library.read_library(), ui_text.main_slots(), ui_menu.Menu
 // (page() and the LEFT/RIGHT rules). Checked by sim/tb_remote.v.
 // The ROM is read one byte per two cycles; any command takes well under 1 ms.
+// A second ROM read port (lib2_*) serves lib/ir_match.v.
 
 module dev_ctrl #(
     parameter LIB_FILE = "core/lib/ir_lib.hex"
@@ -23,19 +27,31 @@ module dev_ctrl #(
     input  wire        clk,
     input  wire        start,             // pulse: run `cmd`
     input  wire [1:0]  cmd,
-    input  wire [1:0]  level,             // PAGE
+    input  wire [2:0]  level,             // PAGE, CODES
     input  wire [7:0]  dev_t,
     input  wire [15:0] dev_b,
     input  wire [15:0] dev_s,             // LOAD / CODES: code set
-    input  wire [15:0] cur,               // PAGE: cursor; JUMP: current brand
+    input  wire [15:0] cur,               // PAGE: cursor; JUMP: current brand; list CODES: entry
     input  wire [15:0] top,               // PAGE: first visible row
     input  wire        dir,               // JUMP
+    input  wire [1:0]  msg,               // PAGE (learn / match): last result (menu.v)
+    input  wire [7:0]  buttons,           // PAGE (match): remote buttons in the list
+    input  wire [4:0]  recent_n,          // recent.v
+    input  wire [15:0] match_n,           // ir_match.v
     output wire        busy,
     output reg  [15:0] n_items = 16'd0,   // PAGE: entries at this level
     output reg         scroll_on = 1'b0,
     output reg  [8:0]  scroll_h0 = 9'd0,
     output reg  [8:0]  scroll_h1 = 9'd0,
     output reg  [15:0] jump_res = 16'd0,
+    // device lists: entry dl_idx of the recent list (dl_match = 0) or the match
+    // list (1) appears on dl_q within two cycles; {type[7:0], brand[11:0], set[11:0]}
+    output reg  [9:0]  dl_idx = 10'd0,
+    output wire        dl_match,
+    input  wire [31:0] dl_q,
+    output reg  [7:0]  ent_t = 8'd0,      // device of the last LOAD / CODES
+    output reg  [15:0] ent_b = 16'd0,
+    output reg  [15:0] ent_s = 16'd0,
     // code table, read by function index (0 POWER .. 11 INPUT, library order)
     input  wire [3:0]  func,
     output wire        code_valid,
@@ -59,7 +75,8 @@ module dev_ctrl #(
 `include "ui_menu.vh"
 
 localparam CMD_LOAD = 2'd0, CMD_CODES = 2'd1, CMD_PAGE = 2'd2, CMD_JUMP = 2'd3;
-// library.CONSTS indices
+localparam L_HOME = 3'd0, L_BRAND = 3'd1, L_SET = 3'd2, L_RECENT = 3'd3, L_LEARN = 3'd4, L_MATCH = 3'd5;
+// library.CONSTS indices (M9 ones: ir_lib.vh M9_C_*)
 localparam C_REMOTE = 0, C_NAV = 3, C_SPACE = 10, C_CHOOSE_DEV = 11, C_DEV_TYPE = 12, C_BRAND = 13,
            C_SETS = 14, C_SET = 15, C_KEYS = 16, C_AMP = 17, C_MORE = 18, C_SLASH = 19, C_GT = 20;
 
@@ -89,11 +106,11 @@ function [3:0] fslot(input [3:0] f);          // function -> main-screen label s
         default: fslot = 4'd0;
     endcase
 endfunction
-function [4:0] fword(input [3:0] f);          // CONSTS index of the function's default word
+function [5:0] fword(input [3:0] f);          // CONSTS index of the function's default word
     case (f)
-        4'd0: fword = 5'd8;  4'd3: fword = 5'd9;  4'd10: fword = 5'd4; 4'd11: fword = 5'd5;
-        4'd8: fword = 5'd6;  4'd9: fword = 5'd7;  4'd2:  fword = 5'd1; 4'd1:  fword = 5'd2;
-        default: fword = 5'd0;
+        4'd0: fword = 6'd8;  4'd3: fword = 6'd9;  4'd10: fword = 6'd4; 4'd11: fword = 6'd5;
+        4'd8: fword = 6'd6;  4'd9: fword = 6'd7;  4'd2:  fword = 6'd1; 4'd1:  fword = 6'd2;
+        default: fword = 6'd0;
     endcase
 endfunction
 function lib_label(input [3:0] f);            // label from the library (VOL keys: fixed words)
@@ -118,30 +135,10 @@ function [31:0] menu_slot(input [4:0] n);
         5'd18: menu_slot = MENU_SLOT_18; 5'd19: menu_slot = MENU_SLOT_19; default: menu_slot = MENU_SLOT_20;
     endcase
 endfunction
-function [31:0] hint_slot(input [1:0] lv, input [2:0] i);
-    case ({lv, i})
-        {2'd0, 3'd0}: hint_slot = HINT0_SLOT_0; {2'd0, 3'd1}: hint_slot = HINT0_SLOT_1;
-        {2'd0, 3'd2}: hint_slot = HINT0_SLOT_2; {2'd0, 3'd3}: hint_slot = HINT0_SLOT_3;
-        {2'd0, 3'd4}: hint_slot = HINT0_SLOT_4; {2'd0, 3'd5}: hint_slot = HINT0_SLOT_5;
-        {2'd1, 3'd0}: hint_slot = HINT1_SLOT_0; {2'd1, 3'd1}: hint_slot = HINT1_SLOT_1;
-        {2'd1, 3'd2}: hint_slot = HINT1_SLOT_2; {2'd1, 3'd3}: hint_slot = HINT1_SLOT_3;
-        {2'd1, 3'd4}: hint_slot = HINT1_SLOT_4; {2'd1, 3'd5}: hint_slot = HINT1_SLOT_5;
-        {2'd2, 3'd0}: hint_slot = HINT2_SLOT_0; {2'd2, 3'd1}: hint_slot = HINT2_SLOT_1;
-        {2'd2, 3'd2}: hint_slot = HINT2_SLOT_2; {2'd2, 3'd3}: hint_slot = HINT2_SLOT_3;
-        {2'd2, 3'd4}: hint_slot = HINT2_SLOT_4; default:      hint_slot = HINT2_SLOT_5;
-    endcase
-endfunction
-function [7:0] hint_str(input [1:0] lv, input [2:0] i);
-    case ({lv, i})
-        {2'd0, 3'd0}: hint_str = HINT0_STR_0; {2'd0, 3'd1}: hint_str = HINT0_STR_1;
-        {2'd0, 3'd2}: hint_str = HINT0_STR_2; {2'd0, 3'd3}: hint_str = HINT0_STR_3;
-        {2'd0, 3'd4}: hint_str = HINT0_STR_4; {2'd0, 3'd5}: hint_str = HINT0_STR_5;
-        {2'd1, 3'd0}: hint_str = HINT1_STR_0; {2'd1, 3'd1}: hint_str = HINT1_STR_1;
-        {2'd1, 3'd2}: hint_str = HINT1_STR_2; {2'd1, 3'd3}: hint_str = HINT1_STR_3;
-        {2'd1, 3'd4}: hint_str = HINT1_STR_4; {2'd1, 3'd5}: hint_str = HINT1_STR_5;
-        {2'd2, 3'd0}: hint_str = HINT2_STR_0; {2'd2, 3'd1}: hint_str = HINT2_STR_1;
-        {2'd2, 3'd2}: hint_str = HINT2_STR_2; {2'd2, 3'd3}: hint_str = HINT2_STR_3;
-        {2'd2, 3'd4}: hint_str = HINT2_STR_4; default:      hint_str = HINT2_STR_5;
+function [31:0] learn_slot(input [2:0] n);
+    case (n)
+        3'd0: learn_slot = LEARN_SLOT_0; 3'd1: learn_slot = LEARN_SLOT_1; 3'd2: learn_slot = LEARN_SLOT_2;
+        3'd3: learn_slot = LEARN_SLOT_3; 3'd4: learn_slot = LEARN_SLOT_4; default: learn_slot = LEARN_SLOT_5;
     endcase
 endfunction
 function [31:0] recolour(input [31:0] w, input [2:0] c);   // replace the colour field [23:21]
@@ -161,17 +158,19 @@ localparam S_DIV0 = 8'd230, S_DIV1 = 8'd231;                  // dv / ds -> dq
 reg [7:0]  ret_rd = 0, ret_cp = 0, ret_cc = 0, ret_num = 0, ret_end = 0, ret_let = 0, ret_div = 0;
 reg [15:0] rd_a = 0;  reg [2:0] rd_n = 0, rd_k = 0;  reg [31:0] val = 0;
 reg [15:0] cp_a = 0;  reg [4:0] cp_slot = 0, pos = 0;
-reg [4:0]  cc_k = 0;
+reg [5:0]  cc_k = 0;
 reg [15:0] nv = 0;    reg [1:0] pw = 0;  reg [3:0] dgt = 0;  reg lead = 0;
 reg [31:0] end_word = 0;
 reg [15:0] let_k = 0; reg [7:0] let_c = 0;
 reg [23:0] dv = 0, dq = 0;  reg [15:0] ds = 0;  reg [24:0] rem = 0;  reg [4:0] di = 0;
 
 // command latches
-reg [1:0]  c_cmd = 0, c_lv = 0;
+reg [1:0]  c_cmd = 0, c_msg = 0;
+reg [2:0]  c_lv = 0;
 reg        c_dir = 0;
-reg [7:0]  c_t = 0;
-reg [15:0] c_b = 0, c_s = 0, c_cur = 0, c_top = 0;
+reg [7:0]  c_t = 0, c_buttons = 0;
+reg [15:0] c_b = 0, c_s = 0, c_cur = 0, c_top = 0, c_match_n = 0;
+reg [4:0]  c_recent_n = 0;
 // library walk
 reg [15:0] ntypes = 0, type_off = 0, label_off = 0, const_off = 0;
 reg [15:0] tname = 0, btab = 0, bname = 0, lst = 0, cs = 0, model = 0, tnb = 0, ttot = 0, bns = 0;
@@ -181,11 +180,20 @@ reg [5:0]  dflt_p = 0, o_p = 0;
 reg [7:0]  lab = 0, lc = 0, lp = 0;
 reg [3:0]  f = 0;
 reg [4:0]  k = 0, r = 0;
-reg [2:0]  hi = 0;
+reg [2:0]  hi = 0, li = 0;
 reg        on = 0;
+// device-list rows
+reg [7:0]  e_t = 0;
+reg [15:0] e_b = 0, e_s = 0, e_tname = 0, e_btab = 0, e_bname = 0, e_lst = 0;
 
 assign busy = (st != 8'd0);
-wire [7:0] hstr = hint_str(c_lv, hi);     // CONSTS index of the current hint word
+assign dl_match = (c_lv == L_MATCH);
+wire [5:0]  h_ix  = c_lv * 6 + hi;                         // footer hint entry
+wire [2:0]  h_n   = HINT_NS[c_lv * 3 +: 3];
+wire [31:0] h_slot = HINT_SLOTS[h_ix * 32 +: 32];
+wire [5:0]  hstr  = HINT_STRS[h_ix * 8 +: 6];
+wire [15:0] row   = c_top + r;                             // list index of row r
+wire        dev_lv = (c_lv == L_RECENT) || (c_lv == L_MATCH);
 
 `define RD(addr, nb, next)  begin rd_a <= (addr); rd_n <= (nb); ret_rd <= (next); st <= S_RD0; end
 `define CP(addr, next)      begin cp_a <= (addr); ret_cp <= (next); st <= S_CP0; end
@@ -194,6 +202,7 @@ wire [7:0] hstr = hint_str(c_lv, hi);     // CONSTS index of the current hint wo
 `define ENDS(w, next)       begin end_word <= (w); ret_end <= (next); st <= S_END; end
 `define LET(kv, next)       begin let_k <= (kv); ret_let <= (next); st <= S_LET0; end
 `define DIV(a, b, next)     begin dv <= (a); ds <= (b); ret_div <= (next); st <= S_DIV0; end
+`define ROWWORD(sl)         (on ? recolour(menu_slot(sl), TXT_ACC_DARK) : menu_slot(sl))
 
 always @(posedge clk) begin
     slot_we <= 1'b0;
@@ -214,7 +223,7 @@ always @(posedge clk) begin
                str_we <= 1'b1; str_waddr <= {cp_slot, pos}; str_wdata <= lq;
                pos <= pos + 1'b1; la <= la + 1'b1; st <= S_CP1;
            end
-    S_CC0: `RD(const_off + {9'd0, cc_k, 2'd0}, 3'd4, S_CC1)
+    S_CC0: `RD(const_off + {8'd0, cc_k, 2'd0}, 3'd4, S_CC1)
     S_CC1: begin cp_a <= val[15:0]; ret_cp <= ret_cc; st <= S_CP0; end
     S_NUM0: begin pw <= 2'd3; lead <= 1'b0; st <= S_NUM1; end
     S_NUM1: begin dgt <= 4'd0; st <= S_NUM2; end
@@ -257,6 +266,7 @@ always @(posedge clk) begin
     8'd0: if (start) begin
         c_cmd <= cmd; c_lv <= level; c_t <= dev_t; c_b <= dev_b; c_s <= dev_s;
         c_cur <= cur; c_top <= top; c_dir <= dir;
+        c_msg <= msg; c_buttons <= buttons; c_recent_n <= recent_n; c_match_n <= match_n;
         `RD(16'd4, 3'd2, 8'd1)
     end
     8'd1: begin ntypes <= val[15:0];  `RD(16'd8, 3'd4, 8'd2) end
@@ -264,11 +274,19 @@ always @(posedge clk) begin
     8'd3: begin label_off <= val[15:0]; `RD(16'd24, 3'd4, 8'd4) end
     8'd4: begin
         const_off <= val[15:0];
-        st <= (c_cmd == CMD_PAGE) ? 8'd60 : (c_cmd == CMD_JUMP) ? 8'd120 : 8'd10;
+        st <= (c_cmd == CMD_PAGE) ? 8'd60 : (c_cmd == CMD_JUMP) ? 8'd120 :
+              (c_cmd == CMD_CODES && (c_lv == L_RECENT || c_lv == L_MATCH)) ? 8'd5 : 8'd10;
     end
+    // list CODES: the device is entry `cur` of the recent / match list
+    8'd5: begin dl_idx <= c_cur[9:0]; st <= 8'd6; end
+    8'd6: st <= 8'd7;
+    8'd7: begin c_t <= dl_q[31:24]; c_b <= {4'd0, dl_q[23:12]}; c_s <= {4'd0, dl_q[11:0]}; st <= 8'd10; end
 
     // ================================================================ LOAD / CODES
-    8'd10: `RD(type_off + 16'd12 * c_t, 3'd4, 8'd11)
+    8'd10: begin
+        ent_t <= c_t; ent_b <= c_b; ent_s <= c_s;
+        `RD(type_off + 16'd12 * c_t, 3'd4, 8'd11)
+    end
     8'd11: begin tname <= val[15:0]; `RD(type_off + 16'd12 * c_t + 16'd4, 3'd4, 8'd12) end
     8'd12: begin btab <= val[15:0];  `RD(val[15:0] + 16'd12 * c_b, 3'd4, 8'd13) end
     8'd13: begin bname <= val[15:0]; `RD(btab + 16'd12 * c_b + 16'd4, 3'd4, 8'd14) end
@@ -333,36 +351,49 @@ always @(posedge clk) begin
     8'd62: begin btab <= val[15:0];  `RD(type_off + 16'd12 * c_t + 16'd8, 3'd2, 8'd63) end
     8'd63: begin
         tnb <= val[15:0];
-        if (c_lv == 2'd0) begin n <= ntypes; st <= 8'd70; end
-        else `RD(btab + 16'd12 * c_b, 3'd4, 8'd64)
+        case (c_lv)
+            L_BRAND, L_SET: `RD(btab + 16'd12 * c_b, 3'd4, 8'd64)
+            L_HOME:   begin n <= ntypes + MENU_HOME_ROWS; st <= 8'd70; end
+            L_RECENT: begin n <= {11'd0, c_recent_n}; st <= 8'd70; end
+            L_MATCH:  begin n <= c_match_n; st <= 8'd70; end
+            default:  begin n <= 16'd0; st <= 8'd140; end                   // learn screen
+        endcase
     end
     8'd64: begin bname <= val[15:0]; `RD(btab + 16'd12 * c_b + 16'd4, 3'd4, 8'd65) end
     8'd65: begin lst <= val[15:0];   `RD(btab + 16'd12 * c_b + 16'd8, 3'd2, 8'd66) end
-    8'd66: begin bns <= val[15:0]; n <= (c_lv == 2'd1) ? tnb : val[15:0]; st <= 8'd70; end
+    8'd66: begin bns <= val[15:0]; n <= (c_lv == L_BRAND) ? tnb : val[15:0]; st <= 8'd70; end
     // slot 0: title
     8'd70: begin
         cp_slot <= 5'd0; pos <= 5'd0;
         case (c_lv)
-            2'd0:    `CC(C_CHOOSE_DEV, 8'd74)
-            2'd1:    `CP(tname, 8'd71)
-            default: `CP(bname, 8'd72)
+            L_HOME:   `CC(C_CHOOSE_DEV, 8'd74)
+            L_BRAND:  `CP(tname, 8'd71)
+            L_SET:    `CP(bname, 8'd72)
+            L_RECENT: `CC(M9_C_RECENT, 8'd74)
+            default:  `NUM(n, 8'd150)                                       // "<n> MATCH(ES)"
         endcase
     end
     8'd71: `CC(C_BRAND, 8'd74)
     8'd72: `CC(C_SPACE, 8'd73)
     8'd73: `CP(tname, 8'd74)
+    8'd150: `CC((n == 16'd1) ? M9_C_MATCH : M9_C_MATCHES, 8'd74)
     8'd74: `ENDS(MENU_SLOT_0, 8'd75)
     // slot 1: breadcrumb
     8'd75: begin
         cp_slot <= 5'd1; pos <= 5'd0;
         case (c_lv)
-            2'd0:    `CC(C_DEV_TYPE, 8'd78)
-            2'd1:    `CP(tname, 8'd78)
-            default: `CP(tname, 8'd76)
+            L_HOME:   `CC(M9_C_HOME_CRUMB, 8'd78)
+            L_BRAND:  `CP(tname, 8'd78)
+            L_SET:    `CP(tname, 8'd76)
+            L_RECENT: `CC(M9_C_RECENT_CRUMB, 8'd78)
+            default:  if (c_msg == 2'd0) `NUM({8'd0, c_buttons}, 8'd151)
+                      else if (c_msg == 2'd3) `CC(M9_C_NONE, 8'd78)
+                      else `CC(M9_C_UNREAD_BTN, 8'd78)
         endcase
     end
     8'd76: `CC(C_GT, 8'd77)
     8'd77: `CP(bname, 8'd78)
+    8'd151: `CC((c_buttons == 8'd1) ? M9_C_BUTTON : M9_C_BUTTONS, 8'd78)
     8'd78: `ENDS(MENU_SLOT_1, 8'd79)
     // slot 2: "cur+1 / n"
     8'd79: begin cp_slot <= 5'd2; pos <= 5'd0; `NUM(c_cur + 16'd1, 8'd80) end
@@ -372,29 +403,36 @@ always @(posedge clk) begin
     // rows: name in slot 3+r, detail in slot 12+r
     8'd83: if (r == 5'd9) begin hi <= 3'd0; st <= 8'd100; end
            else begin
-               kk <= c_top + r; on <= (c_top + r == c_cur);
+               kk <= (c_lv == L_HOME) ? row - MENU_HOME_ROWS : row; on <= (row == c_cur);
                cp_slot <= 5'd3 + r; pos <= 5'd0;
-               if (c_top + r >= n) st <= 8'd84;
+               if (row >= n) st <= 8'd84;
                else case (c_lv)
-                   2'd0:    `RD(type_off + 16'd12 * (c_top + r), 3'd4, 8'd86)
-                   2'd1:    `RD(btab + 16'd12 * (c_top + r), 3'd4, 8'd86)
-                   default: `RD(lst + {c_top[12:0] + r, 3'd0}, 3'd4, 8'd90)
+                   L_HOME:  if (row == 16'd0)      `CC(M9_C_RECENT, 8'd152)
+                            else if (row == 16'd1) `CC(M9_C_LEARN, 8'd154)
+                            else `RD(type_off + 16'd12 * (row - MENU_HOME_ROWS), 3'd4, 8'd86)
+                   L_BRAND: `RD(btab + 16'd12 * row, 3'd4, 8'd86)
+                   L_SET:   `RD(lst + {row[12:0], 3'd0}, 3'd4, 8'd90)
+                   default: begin dl_idx <= row[9:0]; st <= 8'd160; end      // recent / match entry
                endcase
            end
     8'd84: `ENDS(menu_slot(5'd3 + r), 8'd85)                                      // empty row
     8'd85: begin cp_slot <= 5'd12 + r; pos <= 5'd0; r <= r + 1'b1; `ENDS(menu_slot(5'd12 + r), 8'd83) end
     // type / brand row: name, then "<N> SETS" (type: total at +10, brand: count at +8)
     8'd86: `CP(val[15:0], 8'd87)
-    8'd87: `ENDS(on ? recolour(menu_slot(5'd3 + r), TXT_ACC_DARK) : menu_slot(5'd3 + r), 8'd88)
+    8'd87: `ENDS(`ROWWORD(5'd3 + r), 8'd88)
     8'd88: begin
         cp_slot <= 5'd12 + r; pos <= 5'd0;
-        if (c_lv == 2'd0) `RD(type_off + 16'd12 * kk + 16'd10, 3'd2, 8'd89)
-        else              `RD(btab + 16'd12 * kk + 16'd8, 3'd2, 8'd89)
+        if (c_lv == L_HOME) `RD(type_off + 16'd12 * kk + 16'd10, 3'd2, 8'd89)
+        else                `RD(btab + 16'd12 * kk + 16'd8, 3'd2, 8'd89)
     end
     8'd89: begin ptr <= val[15:0]; `NUM(val[15:0], 8'd95) end
     8'd95: `CC((ptr == 16'd1) ? C_SET : C_SETS, 8'd96)
-    8'd96: begin r <= r + 1'b1;
-                 `ENDS(on ? recolour(menu_slot(5'd12 + r), TXT_ACC_DARK) : menu_slot(5'd12 + r), 8'd83) end
+    8'd96: begin r <= r + 1'b1; `ENDS(`ROWWORD(5'd12 + r), 8'd83) end
+    // home rows: RECENT DEVICES "<n> DEVICE(S)", LEARN FROM REMOTE (no detail)
+    8'd152: `ENDS(`ROWWORD(5'd3 + r), 8'd153)
+    8'd153: begin cp_slot <= 5'd12 + r; pos <= 5'd0; `NUM({11'd0, c_recent_n}, 8'd155) end
+    8'd155: `CC((c_recent_n == 5'd1) ? M9_C_DEVICE : M9_C_DEVICES, 8'd96)
+    8'd154: `ENDS(`ROWWORD(5'd3 + r), 8'd85)
     // code-set row: "<model>[ & N MORE]", then "<k> KEYS" unless all 12
     8'd90: begin cs <= val[15:0]; `RD(lst + {kk[12:0], 3'd0} + 16'd4, 3'd2, 8'd91) end
     8'd91: begin model <= val[15:0]; `RD(lst + {kk[12:0], 3'd0} + 16'd6, 3'd2, 8'd92) end
@@ -402,16 +440,36 @@ always @(posedge clk) begin
     8'd93: if (more == 16'd0) st <= 8'd97; else `CC(C_AMP, 8'd94)
     8'd94: `NUM(more, 8'd98)
     8'd98: `CC(C_MORE, 8'd97)
-    8'd97: `ENDS(on ? recolour(menu_slot(5'd3 + r), TXT_ACC_DARK) : menu_slot(5'd3 + r), 8'd99)
-    8'd99: begin cp_slot <= 5'd12 + r; pos <= 5'd0; `RD(cs + 16'd1, 3'd1, 8'd101) end
+    8'd97: `ENDS(`ROWWORD(5'd3 + r), 8'd99)
+    8'd99: begin
+        cp_slot <= 5'd12 + r; pos <= 5'd0;
+        if (dev_lv) `CP(e_tname, 8'd96)                                       // device row: type name
+        else `RD(cs + 16'd1, 3'd1, 8'd101)
+    end
     8'd101: begin ptr <= val[15:0];
                   if (val[7:0] == 8'd12) st <= 8'd96; else `NUM({8'd0, val[7:0]}, 8'd102) end
     8'd102: `CC(C_KEYS, 8'd96)
-    // footer hint: slots 21..26
-    8'd100: if (hi == 3'd6) begin k <= 5'd27; st <= 8'd103; end
-            else begin cp_slot <= 5'd21 + hi; pos <= 5'd0; `CC(hstr[4:0], 8'd104) end
-    8'd104: begin hi <= hi + 1'b1; `ENDS(hint_slot(c_lv, hi), 8'd100) end
-    8'd103: begin                                                              // blank 27..31
+    // device row (recent / match): "<BRAND> <model>[ & N MORE]", then the type name
+    8'd160: st <= 8'd161;                                                      // list read latency
+    8'd161: st <= 8'd162;
+    8'd162: begin
+        e_t <= dl_q[31:24]; e_b <= {4'd0, dl_q[23:12]}; e_s <= {4'd0, dl_q[11:0]};
+        `RD(type_off + 16'd12 * dl_q[31:24], 3'd4, 8'd163)
+    end
+    8'd163: begin e_tname <= val[15:0]; `RD(type_off + 16'd12 * e_t + 16'd4, 3'd4, 8'd164) end
+    8'd164: begin e_btab <= val[15:0];  `RD(val[15:0] + 16'd12 * e_b, 3'd4, 8'd165) end
+    8'd165: begin e_bname <= val[15:0]; `RD(e_btab + 16'd12 * e_b + 16'd4, 3'd4, 8'd166) end
+    8'd166: begin e_lst <= val[15:0];   `RD(val[15:0] + {e_s[12:0], 3'd0} + 16'd4, 3'd2, 8'd167) end
+    8'd167: begin model <= val[15:0];   `RD(e_lst + {e_s[12:0], 3'd0} + 16'd6, 3'd2, 8'd168) end
+    8'd168: begin more <= val[15:0]; `CP(e_bname, 8'd169) end
+    8'd169: `CC(C_SPACE, 8'd170)
+    8'd170: `CP(model, 8'd93)                                                 // then as a set row
+
+    // footer hint: slots 21..(21+N-1), then blank to 31
+    8'd100: if (hi == h_n) begin k <= 5'd21 + h_n; st <= 8'd103; end
+            else begin cp_slot <= 5'd21 + hi; pos <= 5'd0; `CC(hstr, 8'd104) end
+    8'd104: begin hi <= hi + 1'b1; `ENDS(h_slot, 8'd100) end
+    8'd103: begin
         str_we <= 1'b1; str_waddr <= {k, 5'd0}; str_wdata <= 8'd0;
         if (k == 5'd31) st <= 8'd105; else k <= k + 1'b1;
     end
@@ -425,6 +483,34 @@ always @(posedge clk) begin
     8'd106: begin scroll_h0 <= 9'd66 + dq[8:0];
                   `DIV(24'd250 * ((c_top + 16'd9 < n) ? c_top + 16'd9 : n), n, 8'd107) end
     8'd107: begin scroll_h1 <= 9'd66 + dq[8:0]; st <= 8'd0; end
+
+    // ================================================================ learn screen (level 4)
+    8'd140: begin cp_slot <= 5'd0; pos <= 5'd0; `CC(M9_C_LEARN, 8'd141) end
+    8'd141: `ENDS(MENU_SLOT_0, 8'd142)
+    8'd142: begin cp_slot <= 5'd1; pos <= 5'd0; `CC(M9_C_LEARN_CRUMB, 8'd143) end
+    8'd143: `ENDS(MENU_SLOT_1, 8'd144)
+    8'd144: begin cp_slot <= 5'd2; pos <= 5'd0; li <= 3'd0; `ENDS(MENU_SLOT_2, 8'd145) end   // no counter
+    8'd145: if (li == 3'd6) begin k <= 5'd9; st <= 8'd147; end
+            else begin
+                cp_slot <= 5'd3 + li; pos <= 5'd0;
+                case (li)
+                    3'd0: `CC(M9_C_AIM1, 8'd146)
+                    3'd1: `CC(M9_C_AIM2, 8'd146)
+                    3'd2: `CC(M9_C_AIM3, 8'd146)
+                    3'd3: `CC(M9_C_LISTENING, 8'd146)
+                    3'd4: if (c_msg == 2'd1) `CC(M9_C_NOMATCH, 8'd146)
+                          else if (c_msg == 2'd2) `CC(M9_C_UNREAD, 8'd146)
+                          else st <= 8'd146;
+                    default: if (c_msg == 2'd1) `CC(M9_C_ANOTHER, 8'd146)
+                             else if (c_msg == 2'd2) `CC(M9_C_CLOSER, 8'd146)
+                             else st <= 8'd146;
+                endcase
+            end
+    8'd146: begin li <= li + 1'b1; `ENDS(learn_slot(li), 8'd145) end
+    8'd147: begin                                                              // blank 9..20
+        str_we <= 1'b1; str_waddr <= {k, 5'd0}; str_wdata <= 8'd0;
+        if (k == 5'd20) begin hi <= 3'd0; st <= 8'd100; end else k <= k + 1'b1;
+    end
 
     // ================================================================ JUMP (brand list A-Z)
     8'd120: `RD(type_off + 16'd12 * c_t + 16'd4, 3'd4, 8'd121)
@@ -463,5 +549,6 @@ end
 `undef ENDS
 `undef LET
 `undef DIV
+`undef ROWWORD
 
 endmodule

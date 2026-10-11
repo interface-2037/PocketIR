@@ -33,7 +33,7 @@ def check(cond, what):
 
 
 def edge_iv(name, d, f, t=0, frames=2, jitter=30, seed=1):
-    ent = trx.edge_only(trx.envelope(name, d, f, t=t, frames=frames), jitter_us=jitter, seed=seed)
+    ent = rxcap.edge_only(rxcap.envelope(name, d, f, t=t, frames=frames), jitter_us=jitter, seed=seed)
     return ent, rxcap.cap_intervals(rxcap.mark_starts(ent, 1))
 
 

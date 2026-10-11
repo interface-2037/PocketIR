@@ -3,13 +3,14 @@
 // re-boot on every reset exit and on a late all-complete; reads latched on
 // bridge_rd like APF (address already moved on when sampled), returning the
 // loaded words before the first boot and the live device after it; size
-// table = 32 bytes; diagnostic words. Prints PASS or FAIL.
+// table = 32 bytes; diagnostic words; a save with the older library id
+// (LIB_ID_V1) is still used. Prints PASS or FAIL.
 
 `timescale 1ns/1ps
 
 module tb_dev_save;
 
-localparam [31:0] ADDR = 32'h1000_0000, LIB = 32'hFD097E4D, MAGIC = 32'h49525331;
+localparam [31:0] ADDR = 32'h1000_0000, LIB = 32'hFD097E4D, MAGIC = 32'h49525331, V1 = 32'h0BADF00D;
 
 reg         clk = 0;
 always #5 clk = ~clk;
@@ -29,7 +30,7 @@ wire [31:0] dt_data [0:3];
 
 genvar g;
 generate for (g = 0; g < 4; g = g + 1) begin : inst
-    dev_save #(.ADDR(ADDR), .LIB_ID(LIB), .BOOT_T(8'd1), .BOOT_B(16'd31), .BOOT_S(16'd0)) ds (
+    dev_save #(.ADDR(ADDR), .LIB_ID(LIB), .LIB_ID_V1(V1), .BOOT_T(8'd1), .BOOT_B(16'd31), .BOOT_S(16'd0)) ds (
         .clk(clk), .reset_n(reset_n[g]), .allcomplete(ac[g]),
         .bridge_addr(addr), .bridge_wr(wr[g]), .bridge_wr_data(wdata), .bridge_rd(rdq[g]),
         .rd_data(rdata[g]), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s),
@@ -124,6 +125,12 @@ initial begin
     save(1, MAGIC, LIB, {8'd0, 8'd0, 16'd77}, {16'd0, 16'd1});
     @(negedge clk); ac[1] = 1; repeat (5) @(negedge clk);
     expect_boot(1, 2, 8'd0, 16'd77, 16'd1, "late all-complete");
+
+    // a save from an older build (LIB_ID_V1, same device data) is still used
+    @(negedge clk); reset_n[3] = 0;
+    save(3, MAGIC, V1, {8'd0, 8'd0, 16'd77}, {16'd0, 16'd5});
+    repeat (5) @(negedge clk); reset_n[3] = 1; repeat (5) @(negedge clk);
+    expect_boot(3, 2, 8'd0, 16'd77, 16'd5, "older library id");
 
     // shutdown read-back: the live device, then diagnostics
     expect_read(0, ADDR,      MAGIC);
