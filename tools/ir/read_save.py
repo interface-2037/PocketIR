@@ -1,4 +1,5 @@
-"""Decode irremote.sav (the device save slot written by lib/dev_save.v).
+"""Decode irremote.sav: the saved device (lib/dev_save.v) and, from v0.10.0,
+the receiver capture that follows it (ir/ir_rx_cap.v, analysed by rxcap.py).
 
 Usage:  python tools/ir/read_save.py [path/to/irremote.sav]
 """
@@ -9,11 +10,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import library as lib  # noqa: E402
+import rxcap  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 path = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "irremote.sav")
 data = path.read_bytes()
-print(f"{path}: {len(data)} bytes: " + " ".join(f"{x:02x}" for x in data))
+print(f"{path}: {len(data)} bytes: " + " ".join(f"{x:02x}" for x in data[:32]) + (" ..." if len(data) > 32 else ""))
 w = struct.unpack(f">{len(data) // 4}I", data[: len(data) // 4 * 4])
 
 image = bytes(int(x, 16) for x in (ROOT / "src/fpga/core/lib/ir_lib.hex").read_text().split())
@@ -37,3 +39,7 @@ if len(w) >= 8:
           f"all-completes {(w[4] >> 8) & 0xFF}, boots {w[4] & 0xFF}")
     print(f"             slot writes {w[5] >> 16} (while running {w[5] & 0xFFFF}), reads before this one {w[7] >> 16}")
     print(f"             at the last boot: word 2 {w[6]:08x}, valid {(w[7] >> 2) & 1}, fresh {(w[7] >> 1) & 1}; booted {w[7] & 1}")
+
+print()
+for line in rxcap.report(rxcap.parse(data), types):
+    print(line)

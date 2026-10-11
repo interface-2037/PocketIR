@@ -233,7 +233,7 @@ input   wire    [15:0]  cont4_trig
 // Tap = 3 frames, hold = repeat.
 // Analogue: the IR LED is active high and must never be driven with DC --
 // port_ir_tx only ever carries the protocol's PWM carrier (from ir_engine;
-// SIRC 40 kHz 50%). Receiver stays off (TX works with port_ir_rx_disable = 1).
+// SIRC 40 kHz 50%).
 wire       m4_busy;
 wire [3:0] m4_active_idx;
 
@@ -318,7 +318,14 @@ ir_remote ir_remote_m4 (
     .code_d     ( m7_code_d ),
     .code_f     ( m7_code_f )
 );
-assign port_ir_rx_disable = 1;
+
+// M9 step 1 (diagnostic): the receiver is on and every edge it gives is
+// recorded into the save file (ir/ir_rx_cap.v, after the device block), so
+// the PC can see what port_ir_rx really outputs. The TX lamp lights while a
+// burst is being recorded. Instantiated below dev_save (needs reset_n).
+wire        m9_rx_active, m9_cap_hit;
+wire [31:0] m9_cap_rd;
+assign port_ir_rx_disable = 0;
 
 // bridge endianness
 assign bridge_endian_little = 0;
@@ -407,7 +414,8 @@ always @(*) begin
         bridge_rd_data <= 0;
     end
     32'h10xxxxxx: begin
-        bridge_rd_data <= m7_save_rd;       // saved device (lib/dev_save.v)
+        bridge_rd_data <= m9_cap_hit ? m9_cap_rd     // receiver capture (ir/ir_rx_cap.v)
+                                     : m7_save_rd;   // saved device (lib/dev_save.v)
     end
     32'hF8xxxxxx: begin
         bridge_rd_data <= cmd_bridge_rd_data;
@@ -579,8 +587,10 @@ core_bridge_cmd icb (
 );
 
 // M7: device save slot (see the M7 block above)
+// Save file = device block (32 bytes) + receiver capture (M9, 0x8020 bytes).
 dev_save #(.ADDR(32'h1000_0000), .LIB_ID(IR_LIB_ID),
-           .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) dev_save_m7 (
+           .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S),
+           .SIZE(32'h8040)) dev_save_m7 (
     .clk            ( clk_74a ),
     .reset_n        ( reset_n ),
     .allcomplete    ( dataslot_allcomplete ),
@@ -595,6 +605,21 @@ dev_save #(.ADDR(32'h1000_0000), .LIB_ID(IR_LIB_ID),
     .datatable_addr ( datatable_addr ),
     .datatable_wren ( datatable_wren ),
     .datatable_data ( datatable_data )
+);
+
+// M9 step 1: receiver capture (see the M9 block above)
+ir_rx_cap #(.ADDR(32'h1000_0020), .DEPTH_LOG2(12)) ir_rx_cap_m9 (
+    .clk            ( clk_74a ),
+    .run            ( reset_n ),
+    .rx             ( port_ir_rx ),
+    .tx_busy        ( m4_busy ),
+    .active         ( m9_rx_active ),
+    .bridge_addr    ( bridge_addr ),
+    .bridge_wr      ( bridge_wr ),
+    .bridge_wr_data ( bridge_wr_data ),
+    .bridge_rd      ( bridge_rd ),
+    .rd_data        ( m9_cap_rd ),
+    .rd_hit         ( m9_cap_hit )
 );
 
 
@@ -614,7 +639,8 @@ dev_save #(.ADDR(32'h1000_0000), .LIB_ID(IR_LIB_ID),
 // steady for a whole IR frame burst (milliseconds), so a 2-flop synchroniser
 // per bit is enough; a one-pixel mixed value during a change is harmless.
 // Region ids match tools/ui/ui_rom.py: key bit k -> k+1 (k <= 9), Select 11,
-// Start 12; TX lamp is region 13 (driven by tx_on).
+// Start 12; TX lamp is region 13 (driven by tx_on: sending, or M9 step 1:
+// recording a receiver burst).
 reg [3:0] ui_region_74 = 4'd0;
 always @(posedge clk_74a)
     ui_region_74 <= !m4_busy || m7_open ? 4'd0 :
@@ -623,7 +649,7 @@ always @(posedge clk_74a)
 
 reg [4:0] ui_sync1 = 5'd0, ui_sync2 = 5'd0;
 always @(posedge clk_video) begin
-    ui_sync1 <= {m4_busy, ui_region_74};
+    ui_sync1 <= {m4_busy || m9_rx_active, ui_region_74};
     ui_sync2 <= ui_sync1;
 end
 

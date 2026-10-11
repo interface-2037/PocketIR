@@ -11,6 +11,8 @@
 //   2  {8'd0, type[7:0], brand[15:0]}
 //   3  {16'd0, code set[15:0]}
 //   4..7 diagnostics: the start-up sequence as the core saw it (see the read mux)
+// (M9: the file continues with the receiver capture, ir/ir_rx_cap.v; SIZE
+// covers both, so APF reads the whole file back.)
 //
 // Boot: on every reset_n rise (APF "reset exit"), and on a
 // dataslot_allcomplete that arrives while already running, `boot` pulses with
@@ -29,7 +31,8 @@ module dev_save #(
     parameter [31:0] LIB_ID = 32'd0,
     parameter [7:0]  BOOT_T = 8'd0,
     parameter [15:0] BOOT_B = 16'd0,
-    parameter [15:0] BOOT_S = 16'd0
+    parameter [15:0] BOOT_S = 16'd0,
+    parameter [31:0] SIZE   = 32'd32        // whole save file (M9: + ir_rx_cap region)
 ) (
     input  wire        clk,                 // clk_74a (bridge domain)
     input  wire        reset_n,             // core_bridge_cmd: reset exit / enter
@@ -53,7 +56,6 @@ module dev_save #(
 );
 
 localparam [31:0] MAGIC = 32'h49525331;      // "IRS1"
-localparam [31:0] SIZE  = 32'd32;
 
 wire       hit = (bridge_addr[31:5] == ADDR[31:5]);
 reg [31:0] w0 = 32'd0, w1 = 32'd0, w2 = 32'd0, w3 = 32'd0;
