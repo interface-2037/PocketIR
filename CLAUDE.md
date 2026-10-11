@@ -196,6 +196,14 @@ Design constraints:
 - On-Pocket menu: brand → device type → code set, so a set can be tried with POWER (classic universal-remote setup).
 - The selected device is remembered across sessions (save data slot).
 - **Done when:** a second real device is found in the menu and controlled.
+- **Status (2026-10-10):**
+  - v0.8.0: the menu works on hardware; the Samsung Frame was found and controlled through it.
+  - v0.9.2: the chosen device is remembered across Quit / restart.
+  - Implementation:
+    - `lib/menu.v` navigates; `lib/dev_ctrl.v` reads the library.
+    - `lib/dev_save.v` handles the save slot: 32 bytes = magic, library CRC, device, 4 diagnostic words. `python tools/ir/read_save.py <file>` decodes it.
+    - Save-slot facts verified on hardware are in `pocket-learnings.md` (section 4).
+  - Runtime labels (old M8) were merged into M7 and are done too.
 
 ### M8 — Runtime labels on the fixed background
 - The background picture keeps the layout and buttons but drops the labels. A text layer draws the device name and the 12 labels at runtime from the library. Missing functions are dimmed.
