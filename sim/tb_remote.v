@@ -53,12 +53,12 @@ wire        boot;
 wire [7:0]  boot_t, cur_t;
 wire [15:0] boot_b, boot_s, cur_b, cur_s;
 dev_save #(.LIB_ID(IR_LIB_ID), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) sav (
-    .clk(clk), .reset_n(reset_n), .bridge_addr(baddr), .bridge_wr(1'b0), .bridge_wr_data(32'd0), .bridge_rd(brd),
+    .clk(clk), .reset_n(reset_n), .allcomplete(1'b1), .bridge_addr(baddr), .bridge_wr(1'b0), .bridge_wr_data(32'd0), .bridge_rd(brd),
     .rd_data(save_rd), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s),
     .boot(boot), .boot_t(boot_t), .boot_b(boot_b), .boot_s(boot_s),
     .datatable_addr(), .datatable_wren(), .datatable_data());
 
-menu #(.CLK_HZ(1_000_000)) mnu (
+menu #(.CLK_HZ(1_000_000), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) mnu (
     .clk(clk), .boot(boot), .boot_t(boot_t), .boot_b(boot_b), .boot_s(boot_s),
     .kf(kf), .chord(chord), .open(open), .busy(mbusy), .test_key(test_key),
     .bar_row(bar_row), .dev_t(cur_t), .dev_b(cur_b), .dev_s(cur_s),
@@ -338,6 +338,16 @@ initial begin
         errors = errors + 1;
     end
     keys = 0; settle;
+
+    // 6a. core reset (reset exit, no new load) with the menu open: menu closes, Samsung reloads
+    keys = 16'hC000; repeat (2 * CHORD) @(negedge clk); keys = 0; settle;
+    if (!open) begin $display("  chord did not open the menu before the reset"); errors = errors + 1; end
+    saw_load = 0;
+    reset_n = 0; repeat (20) @(negedge clk); reset_n = 1; settle;
+    if (open || !saw_load || last_t !== DEV_SAMSUNG_T || last_b !== DEV_SAMSUNG_B || last_s !== 1) begin
+        $display("  reset: open %b load %b (%0d %0d %0d)", open, saw_load, last_t, last_b, last_s); errors = errors + 1;
+    end
+    check_device("build/ir_expected/dev_samsung.txt");
 
     // 6. shutdown read-back of the save slot: Samsung TV set 1
     baddr = 32'h1000_0008; brd = 1; @(negedge clk); brd = 0; baddr = 32'h1000_000C; repeat (3) @(negedge clk);

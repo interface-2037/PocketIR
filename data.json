@@ -10,7 +10,7 @@
                 "nonvolatile": true,
                 "filename": "irremote.sav",
                 "extensions": ["sav"],
-                "size_maximum": "0x10",
+                "size_maximum": "0x20",
                 "address": "0x10000000"
             }
         ]

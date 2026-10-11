@@ -26,7 +26,7 @@ module menu #(
     parameter [15:0] BOOT_S = 16'd0
 ) (
     input  wire        clk,
-    input  wire        boot,              // pulse: load this device (dev_save.v, saved or default)
+    input  wire        boot,              // pulse, any time: load this device (dev_save.v), close the menu
     input  wire [7:0]  boot_t,
     input  wire [15:0] boot_b,
     input  wire [15:0] boot_s,
@@ -110,10 +110,7 @@ always @(posedge clk) begin
         if (tcount == TPULSE - 1) test_key <= 1'b0;
     end
     case (qs)
-        Q_BOOT: if (boot) begin                               // load the boot device
-            dev_t <= boot_t; dev_b <= boot_b; dev_s <= boot_s;
-            q_cmd[0] <= CMD_LOAD; q_n <= 1'b0; q_i <= 1'b0; qs <= Q_ISSUE;
-        end
+        Q_BOOT: ;                                             // wait for the first boot pulse
         Q_IDLE: begin
             if (chord) begin
                 if (!open) begin
@@ -181,6 +178,11 @@ always @(posedge clk) begin
         Q_JUMPED: begin set_cur(jump_res); q_i <= 1'b1; qs <= Q_ISSUE; end    // then PAGE
         default: qs <= Q_IDLE;
     endcase
+    if (boot) begin                    // (re)start: load the boot device, menu closed
+        dev_t <= boot_t; dev_b <= boot_b; dev_s <= boot_s;
+        open <= 1'b0; test_key <= 1'b0;
+        q_cmd[0] <= CMD_LOAD; q_n <= 1'b0; q_i <= 1'b0; qs <= Q_ISSUE;
+    end
     bar_row <= open ? (c - tp) : 4'd15;
 end
 

@@ -264,7 +264,7 @@ wire [7:0]  m7_dc_t;
 wire [15:0] m7_dc_b, m7_dc_s, m7_dc_cur, m7_dc_top, m7_n_items, m7_jump_res;
 wire [8:0]  m7_h0, m7_h1;
 
-menu menu_m7 (
+menu #(.BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) menu_m7 (
     .clk       ( clk_74a ),
     .boot      ( m7_boot ),
     .boot_t    ( m7_boot_t ), .boot_b ( m7_boot_b ), .boot_s ( m7_boot_s ),
@@ -583,6 +583,7 @@ dev_save #(.ADDR(32'h1000_0000), .LIB_ID(IR_LIB_ID),
            .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) dev_save_m7 (
     .clk            ( clk_74a ),
     .reset_n        ( reset_n ),
+    .allcomplete    ( dataslot_allcomplete ),
     .bridge_addr    ( bridge_addr ),
     .bridge_wr      ( bridge_wr ),
     .bridge_wr_data ( bridge_wr_data ),
