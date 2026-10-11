@@ -358,6 +358,86 @@ def library_hits(types, match):
     return hits
 
 
+# ----------------------------------------------------------------- mark-start matching (M9)
+# The Pocket's receiver only shows the first ~100-300 us of each mark (carrier
+# pulses, then nothing; hardware v0.10.0), so mark lengths are lost but mark
+# *starts* are accurate to ~30 us. A code is found by comparing the captured
+# start-to-start intervals with the reference encoder's for every library code.
+# Times are in engine ticks (4 us), like the RTL will use.
+TICK_CLK = ir.tick_cycles()      # 297 clocks
+IDLE_MIN_US = 250                # an active edge after at least this much idle starts a mark
+FRAME_GAP_TICKS = 1000           # 4 ms: frames are separated by longer intervals than this
+TOL_MIN_TICKS = 40               # interval tolerance: max(160 us, interval / 16)
+
+
+def mark_starts(entries, idle):
+    """Raw capture entries -> mark start times in ticks."""
+    t, out, act = 0, [], 1 - idle
+    for i, (lvl, d) in enumerate(entries):
+        if i:
+            t += d
+        if lvl == act and (i == 0 or us(d) >= IDLE_MIN_US):
+            out.append(t // TICK_CLK)
+    return out
+
+
+def intervals(starts):
+    return [b - a for a, b in zip(starts, starts[1:])]
+
+
+def ref_starts(p, d, f, t=0):
+    """Mark-start offsets (ticks) of a code's first frame, from its first mark."""
+    off, el = [], 0
+    for lvl, n in ir.frame_ticks(p, p.frame, d, f, t):
+        if lvl:
+            off.append(el)
+        el += n
+    return [o - off[0] for o in off]
+
+
+def tol(iv):
+    return max(TOL_MIN_TICKS, iv >> 4)
+
+
+def frame_matches(cap_iv, ref_iv):
+    """Does one frame with start intervals ref_iv appear in the capture? A frame
+    starts at the first mark or after a gap >= FRAME_GAP_TICKS, and must be
+    followed by such a gap or the end of the capture (so SIRC12 can't match the
+    first 12 bits of a SIRC15 frame)."""
+    m = len(ref_iv)
+    for s in range(len(cap_iv) + 1):
+        if s + m > len(cap_iv):
+            break
+        if s and cap_iv[s - 1] < FRAME_GAP_TICKS:
+            continue
+        if all(abs(cap_iv[s + k] - ref_iv[k]) <= tol(ref_iv[k]) for k in range(m)) and \
+                (s + m == len(cap_iv) or cap_iv[s + m] >= FRAME_GAP_TICKS):
+            return True
+    return False
+
+
+def match_library(starts, types):
+    """Mark starts -> (matching codes {(proto id, D, F)}, [(t, b, s, [functions])]).
+    Biphase protocols are tried with both toggle values."""
+    cap_iv = intervals(starts)
+    seen, hits = {}, []
+    for ti, (_, brands) in enumerate(types):
+        for bi, (_, sets) in enumerate(brands):
+            for si, (_, cs) in enumerate(sets):
+                funcs = []
+                for func, (p, d, f, _label) in cs.items():
+                    if (p, d, f) not in seen:
+                        prot = ir.PROTOCOLS[ircompile.PROTO_ORDER[p]]
+                        toggles = (0, 1) if isinstance(prot.bits, ir.Biphase) else (0,)
+                        seen[(p, d, f)] = any(frame_matches(cap_iv, intervals(ref_starts(prot, d, f, t)))
+                                              for t in toggles)
+                    if seen[(p, d, f)]:
+                        funcs.append(func)
+                if funcs:
+                    hits.append((ti, bi, si, funcs))
+    return {k for k, v in seen.items() if v}, hits
+
+
 # ----------------------------------------------------------------- report
 def report(cap, types=None, max_hits=8):
     if cap is None:
@@ -389,6 +469,16 @@ def report(cap, types=None, max_hits=8):
         else:
             lines.append("  output is DEMODULATED (no carrier pulses)")
         lines.append(f"  runs shorter than 1 us (chatter): {a['glitches']}")
+        starts = mark_starts(buf["entries"], buf["idle"])
+        if types is not None:
+            codes, hits = match_library(starts, types)
+            found = ", ".join(f"{ircompile.PROTO_ORDER[p]} {d:X} {f:X}" for p, d, f in sorted(codes)) or "none"
+            lines.append(f"  mark-start match ({len(starts)} marks, what the Pocket will use): {found}")
+            for ti, bi, si, fs in hits[:max_hits]:
+                lines.append(f"      library: {types[ti][0]} / {types[ti][1][bi][0]} / "
+                             f"{types[ti][1][bi][1][si][0]}: {', '.join(fs)}")
+            if len(hits) > max_hits:
+                lines.append(f"      library: ... {len(hits) - max_hits} more")
         lines.append(f"  {len(a['frames'])} frame(s)")
         looked_up = set()
         for k, fr in enumerate(a["frames"][:4]):

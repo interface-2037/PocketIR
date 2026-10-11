@@ -1,77 +1,67 @@
-# M9 plan: learning mode
+# M9 plan: identify a remote, recent devices
 
-## Goal
-Point any remote at the Pocket, press a button, and the Pocket stores the
-signal and can send it again from one of its own buttons. Learned codes are
-kept on the SD card.
+## Decisions (interface2037, 2026-10-11)
+- **Learning identifies, it doesn't record.** A button captured from a remote
+  is matched against the built-in library. The screen lists the matching
+  devices and the user picks one to switch to. No raw codes, no replay.
+- **Learning starts from a menu item.**
+- **Recent devices:** the last 20 devices used, kept in the save file.
 
-## What we don't know yet (decides the design)
-`port_ir_rx` reacts to a TV remote (v0.0.5), but nothing else is known:
+## Step 1 result (v0.10.0, hardware, 2026-10-11)
+Raw capture of a Sony STR-DH790 remote (`tools/ir/fixtures/rx_v0.10.0_sony_power.sav`):
+- `port_ir_rx` idles **high**, is active **low**, and passes the **raw carrier** (40.6 kHz).
+- It only shows the **start of each mark**: 2–10 carrier pulses (~50–300 µs),
+  then nothing. Mark lengths are lost; mark starts are accurate to ~±30 µs.
+- Range: about 3 in.
+- Matching start-to-start intervals against every library code
+  (`tools/ir/rxcap.py`, `match_library`) found exactly SIRC15 48/21 (POWER),
+  i.e. the STR-DH790 and 9 other Sony sets sharing that code, in 0.1 s of Python.
 
-1. **Polarity:** idle high or idle low?
-2. **Raw or demodulated:** does it pulse at the carrier (~38 kHz, like the
-   Game Boy Color's unfiltered receiver) or give a clean envelope (like a
-   TSOP-style receiver)? If raw, we can also learn the carrier frequency.
-3. **Fidelity:** how much are marks stretched or shrunk, and is there
-   chatter on edges (the FPGA input has no Schmitt trigger)?
-4. **Noise:** does room light (lamps, sunlight) produce edges?
-5. **Range:** how close the remote has to be.
+## Design
+1. **Receiver front end** (`ir/ir_rx_marks.v`). The receiver is powered only
+   while the learn screen is open. A mark start = an active edge after ≥ 250 µs
+   of idle. Start-to-start intervals in 4 µs ticks (16 bits, saturating) go into
+   a 256-entry buffer; a burst ends after 200 ms of silence. `ir_rx_cap` keeps
+   recording raw edges into the save file during learning, so a failed match
+   can be diagnosed on the PC.
+2. **Matcher** (`lib/ir_match.v`). Walks every menu entry and code in the
+   library ROM. For each code, a microcode walker (`ir/ir_synth.v`: the same
+   protocol microcode as `ir_engine`, but no real-time output) produces the
+   mark-start intervals of the code's first frame, and they're compared with
+   the capture at every frame start. Same rules as `rxcap.py`: tolerance
+   max(160 µs, 1/16 of the interval); the frame must be followed by a ≥ 4 ms gap
+   or the end of the capture. Biphase protocols are tried with toggle 0 and 1.
+   - Result: a bitmap of matching menu entries (880). Another button press on the
+     remote ANDs into it (narrows the list).
+   - `ir_synth` is a separate module, not a refactor of the hardware-proven
+     `ir_engine`; a testbench checks it against the reference encoder.
+   - Estimated scan time: well under 100 ms.
+   - Outcomes: matches → list; a frame-like burst (≥ 8 marks) with no match →
+     "NO MATCH IN THE LIBRARY"; anything shorter → "COULDN'T READ THAT".
+3. **Recent list** (`lib/recent.v`). 20 × {type, brand, set}. The current
+   device moves to the front whenever it changes (menu, learn, recent list, boot).
+   Stored in the save file and cleared when the library id changes.
+4. **Menu.** Level 0 gets RECENT DEVICES and LEARN FROM REMOTE above the types,
+   with a divider line. New screens: recent list, learn (listening + result),
+   matches list (POWER TEST, ENTER USE, BACK RETRY). Reference model in
+   `tools/ui/ui_menu.py`, checked by `tb_remote`; `dev_ctrl` draws the pages.
+5. **Save file:** device block 0x0000, receiver capture 0x0020, recent list
+   0x8040 (header + 20 words); size 0x80A0.
 
-So step 1 is a measurement, built into the normal core.
+Mockups: `docs/ui/m9_*.png` (`tools/ui/ui_m9.py`).
 
-## Step 1 (v0.10.0): raw capture into the save file
-- `ir/ir_rx_cap.v` records every edge of `port_ir_rx` at clock resolution
-  (13.5 ns), with no filtering, as `{level after edge, clocks since the
-  previous edge}`.
-- A **burst** starts at the first edge and ends after 200 ms without one (or
-  3 s, so continuous noise can't block it). A burst with ≥ 20 edges is kept.
-- Two buffers of 4096 edges each. A new burst goes into the older buffer, so
-  the latest kept burst is never overwritten by noise.
-- The buffers and a small header go into the save file after the device
-  block. APF writes the file to the SD card on Quit / power-off, so the
-  capture reaches the PC with no new hardware.
-- While a burst is being recorded, the TX lamp lights (diagnostic only).
-- Receiver is **on** in this build (`port_ir_rx_disable = 0`). Later steps
-  turn it on only in learning mode.
-- PC side: `tools/ir/read_save.py` decodes the capture: idle level, raw or
-  demodulated, carrier frequency and duty, mark/space list, and which
-  library code (protocol, address, command) the timing matches.
-
-Save file (big-endian words; `data.json` size 0x8040):
-
-| Offset | Words | Content |
-|---|---|---|
-| 0x0000 | 8 | device save (`lib/dev_save.v`, unchanged) |
-| 0x0020 | 8 | capture header (`ir/ir_rx_cap.v`) |
-| 0x0040 | 4096 | capture buffer 0 |
-| 0x4040 | 4096 | capture buffer 1 |
-
-Hardware test: point the Sony DH790 and Samsung Frame remotes at the
-Pocket, tap one known button each (the lamp should flash), then Quit and copy
-`Saves/irremote/interface2037.IRRemote/irremote.sav` to the PC.
-
-## Later steps (planned after step 1's data is in)
-2. **Receiver front end** (`ir_rx.v`): deglitch, envelope (merge carrier
-   pulses if raw), carrier-frequency measurement. Fixed by the step-1 data.
-3. **RAW protocol in `ir_engine`:** play a stored list of mark/space
-   durations at a given carrier. Simulated against the reference encoder.
-4. **Learned-code store:** a "LEARNED" device in the menu with the 12
-   functions; each holds one RAW code (mark/space list, carrier, repeat gap).
-   Kept in the save file in place of the step-1 capture buffers.
-5. **Learn UI:** mockups first (design-review rule), then RTL. Pick a
-   function, press the remote's button, see "GOT IT / TRY AGAIN", test-send.
-6. Hardware test: learn a remote that isn't in the library, replay it.
-
-## Open decisions for interface2037 (needed by step 4/5, not step 1)
-- How learning is entered (a menu item, or a chord).
-- One LEARNED device, or several.
-- Should a learned code replace a library function on the current device, or
-  only live in the LEARNED device?
+## Steps
+1. Done: v0.10.0 raw capture, receiver measured, Python matcher proven on it.
+2. Mockups and interface2037's review. **← now**
+3. `ir_rx_marks` + `ir_synth` + `ir_match`, simulated against `rxcap.py`.
+4. `recent.v` + save layout, simulated.
+5. Menu model, then `menu.v` / `dev_ctrl.v` / `ui_video` divider, simulated
+   against the model. Starts after the `menu.v` timing fix (separate task) lands.
+6. Build v0.11.0. Hardware test: identify the Sony and Samsung remotes, pick
+   the match, check the recent list survives a restart.
 
 ## Risks
-- The receiver may be too slow or too insensitive to capture a remote at
-  usable distance. Step 1 measures it.
-- A raw receiver picks up ambient light; the front end must reject it.
-- Save-file size: 32 KB is far more than needed later (12 RAW codes ≈ 3 KB).
-  Assumed fine, because APF already grew the file from 16 to 32 bytes when
-  the core asked.
+- Range is ~3 in, so the instructions say "1 to 3 inches".
+- SIRC's last bit can't be measured (no stop mark); both variants can match,
+  but the library usually has only one.
+- Remotes using a protocol we don't have (12 supported) can't be identified.

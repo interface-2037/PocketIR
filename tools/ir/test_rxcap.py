@@ -6,6 +6,7 @@ way ir_rx_cap.v does, and checks that the analysis finds the polarity, raw vs
 demodulated, the carrier, the protocol and code, and the library entry.
 """
 
+import random
 import struct
 import sys
 from pathlib import Path
@@ -137,7 +138,6 @@ a, m = first_decode(ent, 1)
 check(has(m, "Kaseikyo", pd, pf), f"Kaseikyo decode {m}")
 
 # ---- 7. every protocol with random codes, demodulated and raw
-import random  # noqa: E402
 rng = random.Random(9)
 for name, p in ir.PROTOCOLS.items():
     sends = [op for op in p.frame if isinstance(op, ir.Send)]
@@ -149,7 +149,62 @@ for name, p in ir.PROTOCOLS.items():
         a, m = first_decode(ent, trial // 2 % 2)
         check(has(m, name, dd, ff), f"random {name} D={dd:X} F={ff:X} raw={raw}: {m}")
 
-# ---- 8. report runs on real-looking files (noise buffer, empty, active)
+# ---- 8. mark-start matching, edge-only receiver (hardware v0.10.0: carrier pulses for the
+#         first ~100-300 us of each mark only, idle high)
+def edge_only(env, onset_us=120, jitter_us=0, seed=1):
+    """Envelope -> what the Pocket's receiver shows: carrier pulses at each mark's start only;
+    each mark start moved by up to +-jitter_us."""
+    r = random.Random(seed)
+    on = round(onset_us * CLK / 1e6)
+    out, carry = [], 0
+    for lvl, n in env:
+        n += carry
+        carry = 0
+        if lvl:
+            j = round(r.uniform(-jitter_us, jitter_us) * CLK / 1e6)
+            if out:
+                out[-1] = (0, out[-1][1] + j)
+            n -= j
+            out += [(1, min(n, on)), (0, n - min(n, on))]
+        elif out and out[-1][0] == 0:
+            out[-1] = (0, out[-1][1] + n)
+        else:
+            out.append((0, n))
+    return capture([(lvl, n) for lvl, n in out if n > 0], idle=1, raw=40_000, duty=0.5)
+
+
+def starts_of(entries):
+    return rxcap.mark_starts(entries, 1)
+
+
+ent = edge_only(envelope("SIRC15", 48, 21), jitter_us=30)
+codes, hits = rxcap.match_library(starts_of(ent), types)
+check(codes == {(1, 48, 21)}, f"edge-only SIRC15: codes {codes}")
+check(any(types[t][1][b][1][s][0].startswith("STR-DH790") and "POWER" in fs for t, b, s, fs in hits),
+      "edge-only SIRC15: STR-DH790 POWER")
+p, d, f, _ = lib_code("TV", "SAMSUNG", "VOL_UP")
+codes, hits = rxcap.match_library(starts_of(edge_only(envelope("Samsung32", d, f, frames=2), jitter_us=30)), types)
+check((p, d, f) in codes and len(hits) == 44, f"edge-only Samsung VOL_UP: {len(hits)} entries")
+# one library code per protocol, with jitter and (biphase) toggle 1
+first = {}
+for _, brands in types:
+    for _, sets in brands:
+        for _, cs in sets:
+            for p, d, f, _l in cs.values():
+                first.setdefault(p, (d, f))
+for p, (d, f) in sorted(first.items()):
+    name = rxcap.ircompile.PROTO_ORDER[p]
+    ent = edge_only(envelope(name, d, f, t=1, frames=2), jitter_us=40, seed=p)
+    codes, _ = rxcap.match_library(starts_of(ent), types)
+    check((p, d, f) in codes, f"edge-only {name} {d:X} {f:X}: {len(codes)} codes found")
+# the real hardware capture (Sony STR-DH790 remote, POWER, v0.10.0)
+cap = rxcap.parse((Path(__file__).parent / "fixtures" / "rx_v0.10.0_sony_power.sav").read_bytes())
+codes, hits = rxcap.match_library(rxcap.mark_starts(cap["bufs"][0]["entries"], cap["bufs"][0]["idle"]), types)
+check(codes == {(1, 48, 21)} and len(hits) == 10, f"hardware capture: {codes}, {len(hits)} entries")
+codes, _ = rxcap.match_library(rxcap.mark_starts(cap["bufs"][1]["entries"], cap["bufs"][1]["idle"]), types)
+check(not codes, "hardware capture, leaders only: no match")
+
+# ---- 9. report runs on real-looking files (noise buffer, empty, active)
 noise = [(0, 0x7FFFFFFF), (1, 500), (0, 70), (1, 10_000), (0, 3)]
 txt = "\n".join(rxcap.report(rxcap.parse(save_file([(noise, 1, {"kept": 0}),
                                                      (capture(envelope("SIRC15", 48, 21), 0, 40_000), 0, {})],

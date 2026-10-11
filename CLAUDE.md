@@ -25,7 +25,7 @@ These come from `src/fpga/core/core_top.v` in `open-fpga/core-template`:
 | Signal | Direction | Notes |
 |---|---|---|
 | `port_ir_tx` | output | IR transmitter LED. **Active-high** (Analogue external-hardware docs). The LED runs near its max rated current: **never drive it with DC**, only PWM pulses with duty < 100% (always gate through `ir_carrier.v`). It shares the power LED's lightpipe, so IR comes out where the power LED is (**verified on hardware v0.0.5**: 38 kHz carrier gated at 1 Hz visibly pulses the power LED on a phone camera; the dark window next to it shows nothing). |
-| `port_ir_rx` | input | IR receiver circuit output. **Verified on hardware (v0.0.5):** reacts to a TV remote when `port_ir_rx_disable = 0`. Raw vs. demodulated and polarity still **unknown**. Does *not* pick up the Pocket's own LED (no self-echo), so it can't be used as a TX self-test. |
+| `port_ir_rx` | input | IR receiver circuit output. **Verified on hardware (v0.10.0):** idle high, active low, raw carrier pulses, but **only for the first ~50–300 µs of each mark**, so mark lengths are lost and mark starts are accurate (±30 µs). Range ~3 in. Does *not* pick up the Pocket's own LED (no self-echo). Details in `pocket-learnings.md`. |
 | `port_ir_rx_disable` | output | Set to `1` to power down the receiver. Keep it `1` except while learning. (The v0.10.0 diagnostic build keeps it `0` all the time, M9 step 1.) |
 | `clk_74a`, `clk_74b` | input | 74.25 MHz main clocks. Treat as asynchronous to each other. |
 | `cont1_key[31:0]` | input | Button bitmap: [0] up, [1] down, [2] left, [3] right, [4] A, [5] B, [6] X, [7] Y, [8] L1, [9] R1, [14] select, [15] start. Synchronous to `clk_74a`. |
@@ -41,7 +41,7 @@ Resolve these early. Each one can change the plan.
 
 1. **Range (biggest risk). Measured at M3 (v0.0.6, 2026-10-09): Sony STR-DH790 power toggle works up to ~7.5 inches (~19 cm)** with SIRC-15 dev 48 cmd 21 at 40 kHz / 33% duty. The SIRC-12 dev 16 fallback does nothing (expected for this model). Original note: ** The Pocket's IR was designed for short-distance Game Boy Color link features. Analogue's manual says distances between IR devices should be very short. A TV may only respond from a few inches away. Measure this at Milestone 3 before investing in UI and databases.
 2. **TX polarity and drive.** Confirm that `port_ir_tx = 1` lights the LED. Confirm whether the LED can be switched cleanly at 38 kHz with ~33% duty cycle.
-3. **RX behavior.** Unknown whether `port_ir_rx` gives the raw signal or a demodulated envelope. Only matters for learning mode.
+3. **RX behavior.** Resolved at M9 step 1: raw, start-of-mark only (see section 2). Learning matches mark-start intervals.
 4. **Power.** Keep the LED off when idle, and keep the receiver disabled unless learning.
 
 ---
@@ -215,15 +215,15 @@ Design constraints:
   - Labels change with the device on hardware (v0.7.0 Sony / Samsung, v0.8.0 menu choice).
   - Dimmed labels for missing functions pass in simulation but haven't been seen on hardware yet: both tested devices have all 12 functions. To check, pick a code set marked "N KEYS" in the menu.
 
-### M9 — Learning mode
-- Enable the receiver and capture `port_ir_rx` mark/space timings. Store them as RAW codes, assign them to buttons, and save them to SD.
-- Plan and steps: `docs/m9-plan.md`. Whether the receiver output is raw or demodulated, and its polarity, are still unknown, so step 1 measures them.
-- **Step 1 (v0.10.0, built 2026-10-10, not yet tested on hardware):**
+### M9 — Learning mode (identify a remote) + recent devices
+- **Decided 2026-10-11:** learning *identifies* a remote: a captured button is matched against the library, the matching devices are listed, and the user picks one to switch to (no raw codes, no replay). Learning starts from a menu item. A recent-devices list keeps the last 20 devices used.
+- Plan and steps: `docs/m9-plan.md`. Mockups: `docs/ui/m9_*.png` (`tools/ui/ui_m9.py`).
+- **Step 1 (v0.10.0, tested on hardware 2026-10-11):** receiver measured (section 2); the Python matcher (`tools/ir/rxcap.py` `match_library`) found the right Sony code in the real capture.
   - `ir/ir_rx_cap.v` records every `port_ir_rx` edge (13.5 ns resolution, no filtering) into two 4096-edge buffers.
   - The buffers are appended to `irremote.sav` (file size 0x8040), so APF writes them to the SD card on Quit.
   - The receiver is on all the time in this build, and the TX lamp lights while a burst is being recorded.
   - `python tools/ir/read_save.py <file>` reports the idle level, raw vs demodulated, carrier, mark/space timing, the decoded protocol and code, and the matching library entries.
-- **Done when:** a remote the Pocket has never seen can be captured and replayed.
+- **Done when:** pointing the Sony and Samsung remotes at the Pocket lists their devices and switching to a match works; the recent list survives a restart.
 
 ### M10 (optional) — External emitter
 - Drive an IR LED through the link port for room-range control. This needs a small hardware add-on.
