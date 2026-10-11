@@ -13,7 +13,9 @@
 // When reset_n first rises, `boot` pulses with the saved device if magic and
 // library id match, else with BOOT_* (no file, a 0xFF-filled new file, or a
 // save from another library build whose indices would mean other devices).
-// Reads always return the live current device, so whatever is current when
+// Reads (latched on the bridge_rd strobe: hardware v0.9.0 showed APF has
+// already moved to the next address when it samples the data; following the
+// address saved every word one place early) always return the live current device, so whatever is current when
 // the core shuts down is what gets saved.
 
 module dev_save #(
@@ -28,7 +30,8 @@ module dev_save #(
     input  wire [31:0] bridge_addr,
     input  wire        bridge_wr,
     input  wire [31:0] bridge_wr_data,
-    output reg  [31:0] rd_data = 32'd0,     // valid the cycle after bridge_addr settles
+    input  wire        bridge_rd,
+    output reg  [31:0] rd_data = 32'd0,     // latched on bridge_rd (APF moves the address on before sampling)
     input  wire [7:0]  cur_t,               // current device (menu.v)
     input  wire [15:0] cur_b,
     input  wire [15:0] cur_s,
@@ -58,6 +61,7 @@ always @(posedge clk) begin
             2'd3: w3 <= bridge_wr_data;
         endcase
 
+    if (bridge_rd)
     case (bridge_addr[3:2])
         2'd0: rd_data <= MAGIC;
         2'd1: rd_data <= LIB_ID;

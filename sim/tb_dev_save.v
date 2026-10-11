@@ -15,11 +15,12 @@ integer errors = 0;
 // four instances, one per boot scenario, sharing the bridge
 reg         reset_n = 0;
 reg  [31:0] addr = 0, wdata = 0;
+reg         rd = 0;
 reg  [3:0]  wr = 0;                    // which instance receives writes
 reg  [7:0]  cur_t = 8'd3;
 reg  [15:0] cur_b = 16'd400, cur_s = 16'd17;
 wire [3:0]  boot, dt_wren;
-wire [31:0] rd [0:3];
+wire [31:0] rdata [0:3];
 wire [7:0]  bt [0:3];
 wire [15:0] bb [0:3], bs [0:3];
 wire [9:0]  dt_addr [0:3];
@@ -28,8 +29,8 @@ wire [31:0] dt_data [0:3];
 genvar g;
 generate for (g = 0; g < 4; g = g + 1) begin : inst
     dev_save #(.ADDR(ADDR), .LIB_ID(LIB), .BOOT_T(8'd1), .BOOT_B(16'd31), .BOOT_S(16'd0)) ds (
-        .clk(clk), .reset_n(reset_n), .bridge_addr(addr), .bridge_wr(wr[g]), .bridge_wr_data(wdata),
-        .rd_data(rd[g]), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s),
+        .clk(clk), .reset_n(reset_n), .bridge_addr(addr), .bridge_wr(wr[g]), .bridge_wr_data(wdata), .bridge_rd(rd),
+        .rd_data(rdata[g]), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s),
         .boot(boot[g]), .boot_t(bt[g]), .boot_b(bb[g]), .boot_s(bs[g]),
         .datatable_addr(dt_addr[g]), .datatable_wren(dt_wren[g]), .datatable_data(dt_data[g]));
 end endgenerate
@@ -69,10 +70,13 @@ task expect_boot(input integer i, input [7:0] t, input [15:0] b, input [15:0] s,
     end
 endtask
 
+// like APF: strobe bridge_rd, move the address on to the next word, sample later
 task expect_read(input [31:0] a, input [31:0] d);
     begin
-        @(negedge clk); addr = a; @(negedge clk); @(negedge clk);
-        if (rd[0] !== d) begin $display("  read %h: %h exp %h", a, rd[0], d); errors = errors + 1; end
+        @(negedge clk); addr = a; rd = 1;
+        @(negedge clk); rd = 0; addr = a + 4;
+        repeat (3) @(negedge clk);
+        if (rdata[0] !== d) begin $display("  read %h: %h exp %h", a, rdata[0], d); errors = errors + 1; end
     end
 endtask
 

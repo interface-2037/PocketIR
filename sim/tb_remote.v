@@ -47,12 +47,13 @@ wire [8:0]  h0, h1;
 // save slot: no file was loaded, so it boots the default (Sony)
 reg         reset_n = 0;
 reg  [31:0] baddr = 0;
+reg         brd = 0;
 wire [31:0] save_rd;
 wire        boot;
 wire [7:0]  boot_t, cur_t;
 wire [15:0] boot_b, boot_s, cur_b, cur_s;
 dev_save #(.LIB_ID(IR_LIB_ID), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) sav (
-    .clk(clk), .reset_n(reset_n), .bridge_addr(baddr), .bridge_wr(1'b0), .bridge_wr_data(32'd0),
+    .clk(clk), .reset_n(reset_n), .bridge_addr(baddr), .bridge_wr(1'b0), .bridge_wr_data(32'd0), .bridge_rd(brd),
     .rd_data(save_rd), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s),
     .boot(boot), .boot_t(boot_t), .boot_b(boot_b), .boot_s(boot_s),
     .datatable_addr(), .datatable_wren(), .datatable_data());
@@ -339,11 +340,11 @@ initial begin
     keys = 0; settle;
 
     // 6. shutdown read-back of the save slot: Samsung TV set 1
-    baddr = 32'h1000_0008; repeat (3) @(negedge clk);
+    baddr = 32'h1000_0008; brd = 1; @(negedge clk); brd = 0; baddr = 32'h1000_000C; repeat (3) @(negedge clk);
     if (save_rd !== {8'd0, DEV_SAMSUNG_T, DEV_SAMSUNG_B}) begin
         $display("  save word 2 %h", save_rd); errors = errors + 1;
     end
-    baddr = 32'h1000_000C; repeat (3) @(negedge clk);
+    baddr = 32'h1000_000C; brd = 1; @(negedge clk); brd = 0; baddr = 32'h1000_0010; repeat (3) @(negedge clk);
     if (save_rd !== 32'd1) begin $display("  save word 3 %h", save_rd); errors = errors + 1; end
     $display("  save slot reads back the chosen device");
 
