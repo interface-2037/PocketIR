@@ -745,6 +745,7 @@ set_global_assignment -name VERILOG_FILE core/ir/ir_engine.v
 set_global_assignment -name SEARCH_PATH core/ir
 set_global_assignment -name VERILOG_FILE core/lib/dev_ctrl.v
 set_global_assignment -name VERILOG_FILE core/lib/menu.v
+set_global_assignment -name VERILOG_FILE core/lib/dev_save.v
 set_global_assignment -name SEARCH_PATH core/lib
 set_global_assignment -name VERILOG_FILE core/ui/ui_video.v
 set_global_assignment -name VERILOG_FILE core/ui/ui_text.v

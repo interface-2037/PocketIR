@@ -1,6 +1,18 @@
 {
     "data": {
         "magic": "APF_VER_1",
-        "data_slots": []
+        "data_slots": [
+            {
+                "name": "Device",
+                "id": 0,
+                "required": false,
+                "parameters": "0x22",
+                "nonvolatile": true,
+                "filename": "irremote.sav",
+                "extensions": ["sav"],
+                "size_maximum": "0x10",
+                "address": "0x10000000"
+            }
+        ]
     }
 }

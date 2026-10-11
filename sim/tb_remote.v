@@ -13,6 +13,7 @@
 //     slots, highlight row, scroll thumb) must match.
 //  5. The script chooses Samsung TV set 1: table and slots equal
 //     dev_samsung.txt, and L1 sends Samsung32 device 7 command 7.
+//  6. The save slot (dev_save.v) boots Sony when empty and reads back Samsung.
 // CLK_HZ = 1 MHz (SIRC T = 600 cycles), chord window 20 ms. Prints PASS or FAIL.
 
 `timescale 1ns/1ps
@@ -43,9 +44,23 @@ wire [7:0]  dc_t;
 wire [15:0] dc_b, dc_s, dc_cur, dc_top, n_items, jump_res;
 wire [8:0]  h0, h1;
 
-menu #(.CLK_HZ(1_000_000), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) mnu (
-    .clk(clk), .kf(kf), .chord(chord), .open(open), .busy(mbusy), .test_key(test_key),
-    .bar_row(bar_row), .dev_t(), .dev_b(), .dev_s(),
+// save slot: no file was loaded, so it boots the default (Sony)
+reg         reset_n = 0;
+reg  [31:0] baddr = 0;
+wire [31:0] save_rd;
+wire        boot;
+wire [7:0]  boot_t, cur_t;
+wire [15:0] boot_b, boot_s, cur_b, cur_s;
+dev_save #(.LIB_ID(IR_LIB_ID), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) sav (
+    .clk(clk), .reset_n(reset_n), .bridge_addr(baddr), .bridge_wr(1'b0), .bridge_wr_data(32'd0),
+    .rd_data(save_rd), .cur_t(cur_t), .cur_b(cur_b), .cur_s(cur_s),
+    .boot(boot), .boot_t(boot_t), .boot_b(boot_b), .boot_s(boot_s),
+    .datatable_addr(), .datatable_wren(), .datatable_data());
+
+menu #(.CLK_HZ(1_000_000)) mnu (
+    .clk(clk), .boot(boot), .boot_t(boot_t), .boot_b(boot_b), .boot_s(boot_s),
+    .kf(kf), .chord(chord), .open(open), .busy(mbusy), .test_key(test_key),
+    .bar_row(bar_row), .dev_t(cur_t), .dev_b(cur_b), .dev_s(cur_s),
     .dc_start(dc_start), .dc_cmd(dc_cmd), .dc_level(dc_level), .dc_t(dc_t), .dc_b(dc_b), .dc_s(dc_s),
     .dc_cur(dc_cur), .dc_top(dc_top), .dc_dir(dc_dir), .dc_busy(dbusy),
     .n_items(n_items), .jump_res(jump_res));
@@ -236,7 +251,10 @@ initial begin
     for (k = 0; k < 1024; k = k + 1) strm[k] = 8'hFF;
     for (k = 0; k < 32; k = k + 1) slotw[k] = 32'hFFFFFFFF;
 
-    // 1. boot: Sony
+    // 1. boot: Sony (nothing loads before reset_n)
+    repeat (500) @(negedge clk);
+    if (saw_load) begin $display("  LOAD before reset_n"); errors = errors + 1; end
+    reset_n = 1;
     settle;
     check_device("build/ir_expected/dev_sony.txt");
 
@@ -319,6 +337,15 @@ initial begin
         errors = errors + 1;
     end
     keys = 0; settle;
+
+    // 6. shutdown read-back of the save slot: Samsung TV set 1
+    baddr = 32'h1000_0008; repeat (3) @(negedge clk);
+    if (save_rd !== {8'd0, DEV_SAMSUNG_T, DEV_SAMSUNG_B}) begin
+        $display("  save word 2 %h", save_rd); errors = errors + 1;
+    end
+    baddr = 32'h1000_000C; repeat (3) @(negedge clk);
+    if (save_rd !== 32'd1) begin $display("  save word 3 %h", save_rd); errors = errors + 1; end
+    $display("  save slot reads back the chosen device");
 
     if (errors == 0) $display("PASS tb_remote");
     else             $display("FAIL tb_remote (%0d errors)", errors);

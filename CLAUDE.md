@@ -78,6 +78,7 @@ src/fpga/core/
     ir_lib.hex/.vh      # code library ROM (tools/ir/library.py, format in docs/codes-format.md)
     dev_ctrl.v          # library reader: LOAD device, CODES, menu PAGE text, A-Z JUMP
     menu.v              # device menu navigation (model: tools/ui/ui_menu.py)
+    dev_save.v          # current device <-> nonvolatile save slot (data.json slot 0, irremote.sav)
   ui/
     ui_video.v          # 400x360 video: RLE picture ROM + palette + highlights + menu background
     ui_text.v           # runtime text layer (32 slots, Inter fonts)
@@ -89,7 +90,7 @@ tools/
   ui/  ui_hires.py (design), ui_rom.py (export + video mode), ui_text.py, ui_menu.py (menu model), test_menu.py
 sim/
   run.ps1               # runs tools/**/test_*.py, then every tb_*.v
-  tb_ir_engine.v, tb_remote.v (menu + library + buttons), tb_ui_video.v
+  tb_ir_engine.v, tb_remote.v (menu + library + buttons + save), tb_dev_save.v, tb_ui_video.v
 ```
 
 ---

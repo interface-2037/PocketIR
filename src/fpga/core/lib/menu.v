@@ -21,11 +21,15 @@ module menu #(
     parameter REPEAT_MS = 400,            // auto-repeat delay
     parameter RATE_MS   = 120,            // auto-repeat interval
     parameter TEST_MS   = 10,             // TEST key pulse length
-    parameter [7:0]  BOOT_T = 8'd0,       // device loaded at power-up
+    parameter [7:0]  BOOT_T = 8'd0,       // device until the boot pulse
     parameter [15:0] BOOT_B = 16'd0,
     parameter [15:0] BOOT_S = 16'd0
 ) (
     input  wire        clk,
+    input  wire        boot,              // pulse: load this device (dev_save.v, saved or default)
+    input  wire [7:0]  boot_t,
+    input  wire [15:0] boot_b,
+    input  wire [15:0] boot_s,
     input  wire [15:0] kf,                // chord-filtered keys (ir_remote.v)
     input  wire        chord,             // pulse: Start + Select
     output reg         open = 1'b0,
@@ -106,7 +110,8 @@ always @(posedge clk) begin
         if (tcount == TPULSE - 1) test_key <= 1'b0;
     end
     case (qs)
-        Q_BOOT: begin                                         // load the boot device
+        Q_BOOT: if (boot) begin                               // load the boot device
+            dev_t <= boot_t; dev_b <= boot_b; dev_s <= boot_s;
             q_cmd[0] <= CMD_LOAD; q_n <= 1'b0; q_i <= 1'b0; qs <= Q_ISSUE;
         end
         Q_IDLE: begin

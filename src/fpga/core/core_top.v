@@ -239,8 +239,13 @@ wire [3:0] m4_active_idx;
 
 // M7: the current device comes from the on-chip code library (lib/dev_ctrl.v),
 // chosen in the device menu (lib/menu.v): Start + Select opens / closes it.
-// Boots with the verified Sony STR-DH790 set.
+// The current device is saved in a nonvolatile data slot (lib/dev_save.v,
+// data.json slot 0); with no valid save it boots the verified Sony STR-DH790.
 `include "ir_lib.vh"
+wire [31:0] m7_save_rd;
+wire        m7_boot;
+wire [7:0]  m7_boot_t, m7_cur_t;
+wire [15:0] m7_boot_b, m7_boot_s, m7_cur_b, m7_cur_s;
 wire        m7_chord, m7_code_valid, m7_dev_busy;
 wire [3:0]  m7_func;
 wire [5:0]  m7_code_proto;
@@ -259,15 +264,17 @@ wire [7:0]  m7_dc_t;
 wire [15:0] m7_dc_b, m7_dc_s, m7_dc_cur, m7_dc_top, m7_n_items, m7_jump_res;
 wire [8:0]  m7_h0, m7_h1;
 
-menu #(.BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) menu_m7 (
+menu menu_m7 (
     .clk       ( clk_74a ),
+    .boot      ( m7_boot ),
+    .boot_t    ( m7_boot_t ), .boot_b ( m7_boot_b ), .boot_s ( m7_boot_s ),
     .kf        ( m7_kf ),
     .chord     ( m7_chord ),
     .open      ( m7_open ),
     .busy      ( ),
     .test_key  ( m7_test_key ),
     .bar_row   ( m7_bar_row ),
-    .dev_t     ( ), .dev_b ( ), .dev_s ( ),
+    .dev_t     ( m7_cur_t ), .dev_b ( m7_cur_b ), .dev_s ( m7_cur_s ),
     .dc_start  ( m7_dc_start ), .dc_cmd ( m7_dc_cmd ), .dc_level ( m7_dc_level ),
     .dc_t      ( m7_dc_t ), .dc_b ( m7_dc_b ), .dc_s ( m7_dc_s ),
     .dc_cur    ( m7_dc_cur ), .dc_top ( m7_dc_top ), .dc_dir ( m7_dc_dir ),
@@ -400,9 +407,7 @@ always @(*) begin
         bridge_rd_data <= 0;
     end
     32'h10xxxxxx: begin
-        // example
-        // bridge_rd_data <= example_device_data;
-        bridge_rd_data <= 0;
+        bridge_rd_data <= m7_save_rd;       // saved device (lib/dev_save.v)
     end
     32'hF8xxxxxx: begin
         bridge_rd_data <= cmd_bridge_rd_data;
@@ -571,6 +576,23 @@ core_bridge_cmd icb (
     .datatable_data         ( datatable_data ),
     .datatable_q            ( datatable_q )
 
+);
+
+// M7: device save slot (see the M7 block above)
+dev_save #(.ADDR(32'h1000_0000), .LIB_ID(IR_LIB_ID),
+           .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) dev_save_m7 (
+    .clk            ( clk_74a ),
+    .reset_n        ( reset_n ),
+    .bridge_addr    ( bridge_addr ),
+    .bridge_wr      ( bridge_wr ),
+    .bridge_wr_data ( bridge_wr_data ),
+    .rd_data        ( m7_save_rd ),
+    .cur_t          ( m7_cur_t ), .cur_b ( m7_cur_b ), .cur_s ( m7_cur_s ),
+    .boot           ( m7_boot ),
+    .boot_t         ( m7_boot_t ), .boot_b ( m7_boot_b ), .boot_s ( m7_boot_s ),
+    .datatable_addr ( datatable_addr ),
+    .datatable_wren ( datatable_wren ),
+    .datatable_data ( datatable_data )
 );
 
 
