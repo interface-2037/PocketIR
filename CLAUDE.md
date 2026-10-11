@@ -199,6 +199,7 @@ Design constraints:
   - On hardware, all 12 STR-DH790 buttons work through the engine.
   - Only SIRC has been tested on a real device so far. The other protocols get real-world tests in M7.
   - **Samsung32 verified on Samsung The Frame TV** (v0.7.0, 2026-10-10): all 12 functions from the library's Samsung TV set 0 (BN59-01180A).
+  - **Sony BDP-BX370 Blu-ray player verified** (v0.11.1, 2026-10-11): not in the library by name; the DISC PLAYER → SONY → **BDP-S5200** entry works (Sony Blu-ray players share SIRC20 device 7258; VOL/MUTE in that set are Sony TV codes, SIRC12 device 1).
 - Not done: the **RAW** protocol (stored timing lists) moves to M7/M9, where raw library entries and learned codes need it.
 
 ### M7 — Built-in code library + device menu
