@@ -205,9 +205,13 @@ Design constraints:
     - Save-slot facts verified on hardware are in `pocket-learnings.md` (section 4).
   - Runtime labels (old M8) were merged into M7 and are done too.
 
-### M8 — Runtime labels on the fixed background
+### M8 — Runtime labels on the fixed background: merged into M7, done
 - The background picture keeps the layout and buttons but drops the labels. A text layer draws the device name and the 12 labels at runtime from the library. Missing functions are dimmed.
 - **Done when:** labels change with the selected device, with mockups reviewed first (design-review rule).
+- **Status:** done.
+  - Mockups were approved before the RTL.
+  - Labels change with the device on hardware (v0.7.0 Sony / Samsung, v0.8.0 menu choice).
+  - Dimmed labels for missing functions pass in simulation but haven't been seen on hardware yet: both tested devices have all 12 functions. To check, pick a code set marked "N KEYS" in the menu.
 
 ### M9 — Learning mode
 - Enable the receiver and capture `port_ir_rx` mark/space timings, which arrive demodulated (it reacted to a TV remote). Store them as RAW codes, assign them to buttons, and save them to SD.
