@@ -198,7 +198,7 @@ Design constraints:
 - **Done when:** a second real device is found in the menu and controlled.
 - **Status (2026-10-10):**
   - v0.8.0: the menu works on hardware; the Samsung Frame was found and controlled through it.
-  - v0.9.2: the chosen device is remembered across Quit / restart.
+  - v0.9.2: the chosen device is remembered across Quit / restart and power-off.
   - Implementation:
     - `lib/menu.v` navigates; `lib/dev_ctrl.v` reads the library.
     - `lib/dev_save.v` handles the save slot: 32 bytes = magic, library CRC, device, 4 diagnostic words. `python tools/ir/read_save.py <file>` decodes it.
