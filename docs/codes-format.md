@@ -17,7 +17,7 @@ the ROM. Strings are uppercase ASCII, zero-terminated, stored once.
 | 12 | 4 | offset of the label table |
 | 16 | 4 | total ROM size in bytes |
 | 20 | 4 | first 8 hex digits of the Flipper-IRDB commit it was built from |
-| 24 | 4 | offset of the constant-string table (one u32 string offset per entry of `library.CONSTS`: `REMOTE `, `VOLUME DOWN`, `VOLUME UP`, `NAVIGATE`, `MENU`, `INPUT`, `OK`, `BACK`, `POWER`, `MUTE`, ` `; append only) |
+| 24 | 4 | offset of the constant-string table (one u32 string offset per entry of `library.CONSTS`: `REMOTE `, `VOLUME DOWN`, `VOLUME UP`, `NAVIGATE`, `MENU`, `INPUT`, `OK`, `BACK`, `POWER`, `MUTE`, ` `, then the menu strings; see `library.CONSTS`; append only) |
 | 28 | 4 | reserved (0) |
 
 ## Type table: one 12-byte entry per device type (menu order)
@@ -26,7 +26,7 @@ the ROM. Strings are uppercase ASCII, zero-terminated, stored once.
 | 4 | offset of the type name string (e.g. `TV`) |
 | 4 | offset of this type's brand table |
 | 2 | number of brands |
-| 2 | reserved |
+| 2 | total code sets of this type (all brands; the menu shows "332 SETS") |
 
 ## Brand table: one 12-byte entry per brand (A–Z)
 | Size | Field |

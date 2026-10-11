@@ -241,7 +241,11 @@ def encode_codeset(cs, label_ids):
 # Fixed strings the on-Pocket loader (dev_ctrl.v) needs, addressed by index via the
 # header's constant-string table. Order is part of the format: append only.
 CONSTS = ["REMOTE ", "VOLUME DOWN", "VOLUME UP", "NAVIGATE", "MENU", "INPUT", "OK", "BACK",
-          "POWER", "MUTE", " "]
+          "POWER", "MUTE", " ",
+          # device menu (M7 step 5)
+          "CHOOSE DEVICE", "DEVICE TYPE", " BRAND", " SETS", " SET", " KEYS", " & ", " MORE",
+          " / ", " > ", "ENTER", "CHOOSE", "UP", "SELECT+START", "EXIT", "LEFT/RIGHT", "A-Z",
+          "TEST", "USE"]
 
 
 def write_library(types, db_commit):
@@ -295,7 +299,8 @@ def write_library(types, db_commit):
                                     for model, cs in sets))
             entries.append(struct.pack("<IIHH", strings[bname], lst, len(sets), 0))
         brand_tables.append(blob.put(b"".join(entries)))
-    type_off = blob.put(b"".join(struct.pack("<IIHH", strings[t], bt, len(brands), 0)
+    type_off = blob.put(b"".join(struct.pack("<IIHH", strings[t], bt, len(brands),
+                                             sum(len(s) for _, s in brands))
                                  for (t, brands), bt in zip(types, brand_tables)))
     blob.b[0:32] = struct.pack("<4sHHIIIII4x", MAGIC, len(types), len(labels),
                                type_off, label_off, len(blob.b), int(db_commit[:8], 16), const_off)
