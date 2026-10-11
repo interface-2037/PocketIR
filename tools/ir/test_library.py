@@ -70,7 +70,7 @@ import ui_text  # noqa: E402
 
 out = ROOT / "build" / "ir_expected"
 out.mkdir(parents=True, exist_ok=True)
-for tag, (tname, bname, si) in {"sony": ("RECEIVER", "SONY", 0), "samsung": ("TV", "SAMSUNG", 0)}.items():
+for tag, (tname, bname, si) in {"sony": ("RECEIVER", "SONY", 0), "samsung": ("TV", "SAMSUNG", 1)}.items():
     ti = list(lib.TYPES).index(tname)
     bi = list(by_type[tname]).index(bname)
     model, cs = by_type[tname][bname][si]

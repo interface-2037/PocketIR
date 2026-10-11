@@ -1,31 +1,34 @@
 // tb_remote.v
-// dev_ctrl (library loader) + ir_remote (buttons, chord, engine) together.
-//  1. Load the verified Sony set: code table and text slots must equal
-//     build/ir_expected/dev_sony.txt (from tools/ir/test_library.py).
+// menu (navigation) + dev_ctrl (library) + ir_remote (buttons, chord, engine).
+//  1. Boot loads the verified Sony set: code table and text slots equal
+//     build/ir_expected/dev_sony.txt (tools/ir/test_library.py).
 //  2. Every Sony button sends its hardware-verified SIRC code (table below,
 //     independent of the library): 3 frames per tap, hold repeats, switching
 //     buttons never repeats the old code.
-//  3. Start + Select chord: pulses `chord`, sends nothing; Start alone (tap or
-//     held) still sends POWER.
-//  4. Load Samsung TV set 0: table and slots equal dev_samsung.txt; L1 sends
-//     Samsung32 device 7 command 7 (volume +).
+//  3. Chord: opens / closes the menu and sends nothing; Start alone (held)
+//     still sends POWER.
+//  4. The menu script build/ir_expected/menu_steps.txt (tools/ui/test_menu.py,
+//     from the Python model ui_menu.Menu): after every key, open/level, the
+//     LOAD/CODES commands issued, TEST sends, and the whole page (32 text
+//     slots, highlight row, scroll thumb) must match.
+//  5. The script chooses Samsung TV set 1: table and slots equal
+//     dev_samsung.txt, and L1 sends Samsung32 device 7 command 7.
 // CLK_HZ = 1 MHz (SIRC T = 600 cycles), chord window 20 ms. Prints PASS or FAIL.
 
 `timescale 1ns/1ps
 
 module tb_remote;
 
+`include "ir_lib.vh"
 localparam T = 600;
 localparam CHORD = 20_000;           // 20 ms at 1 MHz
 
 reg         clk  = 0;
 always #500 clk = ~clk;
 reg  [15:0] keys = 0;
-reg         load = 0;
-reg  [7:0]  dev_t = 0;
-reg  [15:0] dev_b = 0, dev_s = 0;
-wire        tx, env, busy, chord, dbusy;
-wire [3:0]  active_idx, func;
+wire        tx, env, busy, chord, dbusy, mbusy, open, test_key;
+wire [3:0]  active_idx, func, bar_row;
+wire [15:0] kf;
 wire        cvalid;
 wire [5:0]  cproto;
 wire [31:0] cd, cf;
@@ -34,31 +37,49 @@ wire [4:0]  slot_waddr;
 wire [31:0] slot_wdata;
 wire [9:0]  str_waddr;
 wire [7:0]  str_wdata;
+wire        dc_start, dc_dir, scroll_on;
+wire [1:0]  dc_cmd, dc_level;
+wire [7:0]  dc_t;
+wire [15:0] dc_b, dc_s, dc_cur, dc_top, n_items, jump_res;
+wire [8:0]  h0, h1;
+
+menu #(.CLK_HZ(1_000_000), .BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) mnu (
+    .clk(clk), .kf(kf), .chord(chord), .open(open), .busy(mbusy), .test_key(test_key),
+    .bar_row(bar_row), .dev_t(), .dev_b(), .dev_s(),
+    .dc_start(dc_start), .dc_cmd(dc_cmd), .dc_level(dc_level), .dc_t(dc_t), .dc_b(dc_b), .dc_s(dc_s),
+    .dc_cur(dc_cur), .dc_top(dc_top), .dc_dir(dc_dir), .dc_busy(dbusy),
+    .n_items(n_items), .jump_res(jump_res));
 
 dev_ctrl #(.LIB_FILE("src/fpga/core/lib/ir_lib.hex")) dev (
-    .clk(clk), .load(load), .dev_t(dev_t), .dev_b(dev_b), .dev_s(dev_s), .busy(dbusy),
+    .clk(clk), .start(dc_start), .cmd(dc_cmd), .level(dc_level), .dev_t(dc_t), .dev_b(dc_b),
+    .dev_s(dc_s), .cur(dc_cur), .top(dc_top), .dir(dc_dir), .busy(dbusy), .n_items(n_items),
+    .scroll_on(scroll_on), .scroll_h0(h0), .scroll_h1(h1), .jump_res(jump_res),
     .func(func), .code_valid(cvalid), .code_proto(cproto), .code_d(cd), .code_f(cf),
     .slot_we(slot_we), .slot_waddr(slot_waddr), .slot_wdata(slot_wdata),
     .str_we(str_we), .str_waddr(str_waddr), .str_wdata(str_wdata));
 
 ir_remote #(.PROG_FILE("build/ir_expected/ir_proto_sim.hex"), .CLK_HZ(1_000_000), .CHORD_MS(20)) rem (
     .clk(clk), .keys(keys), .ir_tx(tx), .envelope(env), .busy(busy), .active_idx(active_idx),
-    .chord(chord), .code_func(func), .code_valid(cvalid), .code_proto(cproto),
-    .code_d(cd), .code_f(cf));
+    .chord(chord), .keys_filtered(kf), .inhibit(open), .test_key(test_key),
+    .code_func(func), .code_valid(cvalid), .code_proto(cproto), .code_d(cd), .code_f(cf));
 
 integer errors = 0;
 
-// ---------------- text-layer writes, captured
+// ---------------- text-layer writes, dev_ctrl commands, chords, engine starts
 reg [31:0] slotw [0:31];
 reg [7:0]  strm [0:1023];
+reg        saw_load = 0, saw_codes = 0;
+integer    last_t = 0, last_b = 0, last_s = 0, chords = 0, sends = 0;
+reg        busy_r = 0;
 always @(posedge clk) begin
     if (slot_we) slotw[slot_waddr] <= slot_wdata;
     if (str_we)  strm[str_waddr]  <= str_wdata;
+    if (dc_start && dc_cmd == 2'd0) begin saw_load = 1;  last_t = dc_t; last_b = dc_b; last_s = dc_s; end
+    if (dc_start && dc_cmd == 2'd1) begin saw_codes = 1; last_t = dc_t; last_b = dc_b; last_s = dc_s; end
+    if (chord) chords = chords + 1;
+    busy_r <= busy;
+    if (busy && !busy_r) sends = sends + 1;
 end
-
-// ---------------- chord pulses, counted
-integer chords = 0;
-always @(posedge clk) if (chord) chords = chords + 1;
 
 // ---------------- SIRC decoder (frame length from the trailing gap)
 integer run = 0;
@@ -69,6 +90,7 @@ reg     in_frame = 0;
 integer nframes = 0;
 reg [19:0] f_data [0:63];
 integer    f_bits [0:63];
+reg     sirc_decode = 1;
 
 task finish_frame;
     begin
@@ -78,26 +100,14 @@ task finish_frame;
     end
 endtask
 
-task end_run(input reg level, input integer len);
-    begin
-        if (level) begin
-            if (len == 4 * T) begin
-                if (in_frame) finish_frame;
-                in_frame = 1; nb = 0; data = 0;
-            end else if (in_frame && (len == T || len == 2 * T)) begin
-                data = data | ((len == 2 * T) << nb);
-                nb = nb + 1;
-            end
-        end else if (in_frame && len != T) begin
-            finish_frame;
-        end
-    end
-endtask
-
-reg sirc_decode = 1;
 always @(negedge clk) begin
     if (env !== prev) begin
-        if (sirc_decode) end_run(prev, run);
+        if (sirc_decode) begin
+            if (prev) begin
+                if (run == 4 * T) begin if (in_frame) finish_frame; in_frame = 1; nb = 0; data = 0; end
+                else if (in_frame && (run == T || run == 2 * T)) begin data = data | ((run == 2 * T) << nb); nb = nb + 1; end
+            end else if (in_frame && run != T) finish_frame;
+        end
         run = 1; prev = env;
     end else begin
         run = run + 1;
@@ -132,10 +142,10 @@ function frame_is(input integer f, input integer idx);
     end
 endfunction
 
-task wait_idle;
+task settle;                       // until menu, library and engine are all idle
     begin
         repeat (200) @(negedge clk);
-        while (busy) @(negedge clk);
+        while (mbusy || dbusy || busy || rem.cs != 3'd0) @(negedge clk);
         repeat (3 * T) @(negedge clk);
     end
 endtask
@@ -145,30 +155,45 @@ task tap(input integer idx);
     begin
         nframes = 0;
         keys = 16'd1 << idx; repeat (20) @(negedge clk); keys = 0;
-        wait_idle;
+        settle;
         if (nframes != 3) begin $display("  button %0d: %0d frames (exp 3)", idx, nframes); errors = errors + 1; end
         for (f = 0; f < nframes && f < 64; f = f + 1)
-            if (!frame_is(f, idx)) begin
-                $display("  button %0d frame %0d: %0d bits data %h", idx, f, f_bits[f], f_data[f]);
-                errors = errors + 1;
-            end
+            if (!frame_is(f, idx)) begin $display("  button %0d frame %0d: %0d bits data %h", idx, f, f_bits[f], f_data[f]); errors = errors + 1; end
     end
 endtask
 
-// ---------------- load a device and compare with its vector file
-task load_and_check(input [8*48-1:0] fname);
-    integer fd, rc, k, i, v, p, d, fx, w, len, c, bad;
+// ---------------- compare text slots with a vector block: n lines "word len chars..."
+task check_slots(input integer fd, input integer nslots, input [8*16-1:0] what, output integer bad);
+    integer rc, k, i, w, len, c;
+    begin
+        bad = 0;
+        for (k = 0; k < nslots; k = k + 1) begin
+            rc = $fscanf(fd, "%h %d", w, len);
+            if (len != 0 && slotw[k] !== w) begin           // an empty slot draws nothing: word irrelevant
+                if (bad < 6) $display("  %0s slot %0d word %h exp %h", what, k, slotw[k], w);
+                bad = bad + 1;
+            end
+            for (i = 0; i < len; i = i + 1) begin
+                rc = $fscanf(fd, " %h", c);
+                if (strm[k * 32 + i] !== c[7:0]) begin
+                    if (bad < 6) $display("  %0s slot %0d char %0d: %h exp %h", what, k, i, strm[k * 32 + i], c[7:0]);
+                    bad = bad + 1;
+                end
+            end
+            if (strm[k * 32 + len] !== 8'd0) begin
+                if (bad < 6) $display("  %0s slot %0d not terminated", what, k);
+                bad = bad + 1;
+            end
+        end
+    end
+endtask
+
+task check_device(input [8*48-1:0] fname);
+    integer fd, rc, k, v, p, d, fx, bad, b2, dt, db, ds;
     begin
         fd = $fopen(fname, "r");
-        if (fd == 0) begin
-            $display("FAIL tb_remote (missing %0s -- run python tools/ir/test_library.py)", fname);
-            $finish;
-        end
-        rc = $fscanf(fd, "%d %d %d\n", dev_t, dev_b, dev_s);
-        @(negedge clk); load = 1; @(negedge clk); load = 0;
-        repeat (5) @(negedge clk);
-        while (dbusy) @(negedge clk);
-        repeat (3) @(negedge clk);          // last text writes are registered: let them land
+        if (fd == 0) begin $display("FAIL tb_remote (missing %0s -- run the tools/ tests)", fname); $finish; end
+        rc = $fscanf(fd, "%d %d %d\n", dt, db, ds);
         bad = 0;
         for (k = 0; k < 12; k = k + 1) begin
             rc = $fscanf(fd, "%h %h %h %h\n", v, p, d, fx);
@@ -178,86 +203,122 @@ task load_and_check(input [8*48-1:0] fname);
                 bad = bad + 1;
             end
         end
-        for (k = 0; k < 11; k = k + 1) begin
-            rc = $fscanf(fd, "%h %d", w, len);
-            if (slotw[k] !== w) begin $display("  %0s slot %0d word %h exp %h", fname, k, slotw[k], w); bad = bad + 1; end
-            for (i = 0; i < len; i = i + 1) begin
-                rc = $fscanf(fd, " %h", c);
-                if (strm[k * 32 + i] !== c[7:0]) begin
-                    if (bad < 8) $display("  %0s slot %0d char %0d: %h exp %h", fname, k, i, strm[k * 32 + i], c[7:0]);
-                    bad = bad + 1;
-                end
-            end
-            if (strm[k * 32 + len] !== 8'd0) begin $display("  %0s slot %0d not terminated", fname, k); bad = bad + 1; end
-        end
+        check_slots(fd, 11, "device", b2);
+        bad = bad + b2;
         for (k = 11; k < 32; k = k + 1)
             if (strm[k * 32] !== 8'd0) begin $display("  slot %0d not blanked", k); bad = bad + 1; end
         $fclose(fd);
         errors = errors + bad;
-        $display("  loaded %0s: %0d mismatches", fname, bad);
+        $display("  %0s: %0d mismatches", fname, bad);
     end
 endtask
 
-integer k, f, n_up, n_down, switched, n_pow;
+// ---------------- press a menu function (names as in ui_menu.Menu.press)
+task press(input [8*8-1:0] key);
+    begin
+        if (key == "CHORD") begin keys = 16'hC000; repeat (100) @(negedge clk); keys = 0; end
+        else begin
+            keys = (key == "UP")    ? 16'h0002 : (key == "DOWN")  ? 16'h0001 :
+                   (key == "LEFT")  ? 16'h0008 : (key == "RIGHT") ? 16'h0004 :
+                   (key == "OK")    ? 16'h0080 : (key == "BACK")  ? 16'h0040 :
+                   (key == "POWER") ? 16'h8000 : 16'h0000;
+            repeat (20) @(negedge clk); keys = 0;
+        end
+        repeat (CHORD + 15_000) @(negedge clk);      // chord window + TEST pulse
+        settle;
+    end
+endtask
+
+integer fd, rc, nsteps, st, bt, bb, bs, e_open, e_level, e_test, e_load, e_codes, e_t, e_b, e_s;
+integer bar, sc, eh0, eh1, bad, s0, k, f, n_up, n_down, switched, n_pow;
+reg [8*8-1:0] key;
 initial begin
-    for (k = 0; k < 1024; k = k + 1) strm[k] = 8'hFF;      // so "blanked"/"terminated" checks mean something
+    for (k = 0; k < 1024; k = k + 1) strm[k] = 8'hFF;
     for (k = 0; k < 32; k = k + 1) slotw[k] = 32'hFFFFFFFF;
-    repeat (50) @(negedge clk);
 
-    // 1. Sony
-    load_and_check("build/ir_expected/dev_sony.txt");
+    // 1. boot: Sony
+    settle;
+    check_device("build/ir_expected/dev_sony.txt");
 
-    // 2. every Sony button
+    // 2. every Sony button, hold, switch
     for (k = 0; k < 16; k = k + 1)
         if (k <= 9 || k == 14 || k == 15) tap(k);
-    $display("  Sony: 12 buttons tapped");
-
-    nframes = 0; keys = 16'd1 << 9; repeat (8 * 75 * T) @(negedge clk); keys = 0; wait_idle;
+    nframes = 0; keys = 16'd1 << 9; repeat (8 * 75 * T) @(negedge clk); keys = 0; settle;
     if (nframes < 8) begin $display("  hold R1: only %0d frames", nframes); errors = errors + 1; end
     for (f = 0; f < nframes && f < 64; f = f + 1)
         if (!frame_is(f, 9)) begin $display("  hold R1 frame %0d wrong", f); errors = errors + 1; end
-
     nframes = 0;
     keys = 16'd1 << 0; repeat (75 * T + 100) @(negedge clk);
     keys = 16'd1 << 1; repeat (6 * 75 * T) @(negedge clk);
-    keys = 0; wait_idle;
+    keys = 0; settle;
     n_up = 0; n_down = 0; switched = 0;
     for (f = 0; f < nframes && f < 64; f = f + 1) begin
-        if (frame_is(f, 0)) begin
-            n_up = n_up + 1;
-            if (switched) begin $display("  Up frame after switching to Down"); errors = errors + 1; end
-        end else if (frame_is(f, 1)) begin n_down = n_down + 1; switched = 1; end
-        else begin $display("  switch test: unexpected frame %0d", f); errors = errors + 1; end
+        if (frame_is(f, 0)) begin n_up = n_up + 1; if (switched) errors = errors + 1; end
+        else if (frame_is(f, 1)) begin n_down = n_down + 1; switched = 1; end
+        else errors = errors + 1;
     end
     if (n_up < 3 || n_up > 4 || n_down < 3) begin $display("  switch: %0d Up, %0d Down", n_up, n_down); errors = errors + 1; end
+    $display("  Sony: 12 buttons, hold and switch checked");
 
-    // 3. chord: both together, and Select then Start 5 ms later -> 2 chords, nothing sent
-    nframes = 0; chords = 0;
-    keys = 16'hC000; repeat (2 * CHORD) @(negedge clk); keys = 0; wait_idle;
+    // 3. chord: together -> opens the menu; Select then Start 5 ms later -> closes it; nothing sent
+    nframes = 0; chords = 0; sends = 0;
+    keys = 16'hC000; repeat (2 * CHORD) @(negedge clk); keys = 0; settle;
+    if (!open) begin $display("  chord did not open the menu"); errors = errors + 1; end
     keys = 16'h4000; repeat (5000) @(negedge clk); keys = 16'hC000; repeat (2 * CHORD) @(negedge clk);
-    keys = 0; wait_idle;
-    if (chords != 2 || nframes != 0) begin
-        $display("  chord: %0d pulses, %0d frames sent (exp 2, 0)", chords, nframes); errors = errors + 1;
+    keys = 0; settle;
+    if (open || chords != 2 || sends != 0) begin
+        $display("  chord: open=%b, %0d pulses, %0d sends (exp 0, 2, 0)", open, chords, sends); errors = errors + 1;
     end
-    // Start held past the window: POWER repeats while held
     nframes = 0;
-    keys = 16'h8000; repeat (CHORD + 5 * 75 * T) @(negedge clk); keys = 0; wait_idle;
+    keys = 16'h8000; repeat (CHORD + 5 * 75 * T) @(negedge clk); keys = 0; settle;
     n_pow = 0;
     for (f = 0; f < nframes && f < 64; f = f + 1) if (frame_is(f, 15)) n_pow = n_pow + 1;
-    if (nframes < 5 || n_pow != nframes || chords != 2) begin
-        $display("  held Start: %0d frames, %0d power", nframes, n_pow); errors = errors + 1;
-    end
-    $display("  chord: 2 chords sent nothing; held Start sent %0d POWER frames", n_pow);
+    if (nframes < 5 || n_pow != nframes) begin $display("  held Start: %0d frames, %0d power", nframes, n_pow); errors = errors + 1; end
+    $display("  chord: menu opened and closed, nothing sent; held Start sent %0d POWER frames", n_pow);
 
-    // 4. Samsung TV: load, then L1 must hand Samsung32 dev 7 cmd 7 to the engine
+    // 4. menu script
     sirc_decode = 0;
-    load_and_check("build/ir_expected/dev_samsung.txt");
+    fd = $fopen("build/ir_expected/menu_steps.txt", "r");
+    if (fd == 0) begin $display("FAIL tb_remote (missing menu_steps.txt -- run python tools/ui/test_menu.py)"); $finish; end
+    rc = $fscanf(fd, "%d %d %d %d\n", nsteps, bt, bb, bs);
+    for (st = 0; st < nsteps; st = st + 1) begin
+        rc = $fscanf(fd, "%s %d %d %d %d %d %d %d %d\n", key, e_open, e_level, e_test, e_load, e_codes, e_t, e_b, e_s);
+        saw_load = 0; saw_codes = 0; sends = 0;
+        press(key);
+        bad = 0;
+        if (open !== e_open[0] || (e_open && mnu.level !== e_level)) begin
+            $display("  step %0d (%0s): open %b level %0d, exp %0d %0d", st, key, open, mnu.level, e_open, e_level); bad = bad + 1;
+        end
+        if (saw_load !== e_load[0] || saw_codes !== e_codes[0] ||
+            ((e_load || e_codes) && (last_t !== e_t || last_b !== e_b || last_s !== e_s))) begin
+            $display("  step %0d (%0s): load %b codes %b (%0d %0d %0d), exp %0d %0d (%0d %0d %0d)", st, key,
+                     saw_load, saw_codes, last_t, last_b, last_s, e_load, e_codes, e_t, e_b, e_s); bad = bad + 1;
+        end
+        if (e_open && e_test && sends != 1) begin $display("  step %0d: TEST sent %0d times", st, sends); bad = bad + 1; end
+        if (e_open && !e_test && sends != 0) begin $display("  step %0d: menu sent IR without TEST", st); bad = bad + 1; end
+        if (e_open) begin
+            rc = $fscanf(fd, "%d %d %d %d\n", bar, sc, eh0, eh1);
+            if (bar_row !== bar || scroll_on !== sc[0] || (sc && (h0 !== eh0 || h1 !== eh1))) begin
+                $display("  step %0d (%0s): bar %0d scroll %b %0d-%0d, exp %0d %0d %0d-%0d", st, key,
+                         bar_row, scroll_on, h0, h1, bar, sc, eh0, eh1); bad = bad + 1;
+            end
+            check_slots(fd, 32, "menu", s0);
+            if (s0) $display("  step %0d (%0s): %0d page mismatches", st, key, s0);
+            bad = bad + s0;
+        end
+        errors = errors + bad;
+    end
+    $fclose(fd);
+    $display("  menu: %0d scripted steps checked", nsteps);
+
+    // 5. the script chose Samsung TV set 1
+    check_device("build/ir_expected/dev_samsung.txt");
     keys = 16'd1 << 8; repeat (20) @(negedge clk);
     if (!busy || rem.engine.d_l !== 32'd7 || rem.engine.f_l !== 32'd7 || cproto !== 6'd5) begin
         $display("  Samsung L1: busy %b D %h F %h proto %0d", busy, rem.engine.d_l, rem.engine.f_l, cproto);
         errors = errors + 1;
     end
-    keys = 0; wait_idle;
+    keys = 0; settle;
 
     if (errors == 0) $display("PASS tb_remote");
     else             $display("FAIL tb_remote (%0d errors)", errors);

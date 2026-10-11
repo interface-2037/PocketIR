@@ -237,40 +237,54 @@ input   wire    [15:0]  cont4_trig
 wire       m4_busy;
 wire [3:0] m4_active_idx;
 
-// M7: the current device comes from the on-chip code library (lib/dev_ctrl.v).
-// Step 4 test: Start + Select toggles Sony STR-DH790 <-> Samsung TV (set 0);
-// the device menu (step 5) replaces this toggle.
+// M7: the current device comes from the on-chip code library (lib/dev_ctrl.v),
+// chosen in the device menu (lib/menu.v): Start + Select opens / closes it.
+// Boots with the verified Sony STR-DH790 set.
 `include "ir_lib.vh"
-wire       m7_chord, m7_code_valid, m7_dev_busy;
-wire [3:0] m7_func;
-wire [5:0] m7_code_proto;
+wire        m7_chord, m7_code_valid, m7_dev_busy;
+wire [3:0]  m7_func;
+wire [5:0]  m7_code_proto;
 wire [31:0] m7_code_d, m7_code_f;
-wire       m7_slot_we, m7_str_we;
-wire [4:0] m7_slot_waddr;
+wire        m7_slot_we, m7_str_we;
+wire [4:0]  m7_slot_waddr;
 wire [31:0] m7_slot_wdata;
-wire [9:0] m7_str_waddr;
-wire [7:0] m7_str_wdata;
+wire [9:0]  m7_str_waddr;
+wire [7:0]  m7_str_wdata;
+wire [15:0] m7_kf;
+wire        m7_open, m7_test_key;
+wire [3:0]  m7_bar_row;
+wire        m7_dc_start, m7_dc_dir, m7_scroll_on;
+wire [1:0]  m7_dc_cmd, m7_dc_level;
+wire [7:0]  m7_dc_t;
+wire [15:0] m7_dc_b, m7_dc_s, m7_dc_cur, m7_dc_top, m7_n_items, m7_jump_res;
+wire [8:0]  m7_h0, m7_h1;
 
-reg  [7:0] m7_boot = 8'd0;               // load the first device shortly after configuration
-reg        m7_load = 1'b0, m7_samsung = 1'b0;
-always @(posedge clk_74a) begin
-    m7_load <= 1'b0;
-    if (m7_boot != 8'hFF) begin
-        m7_boot <= m7_boot + 1'b1;
-        if (m7_boot == 8'hFE) m7_load <= 1'b1;
-    end else if (m7_chord && !m7_dev_busy) begin
-        m7_samsung <= ~m7_samsung;
-        m7_load    <= 1'b1;
-    end
-end
+menu #(.BOOT_T(DEV_SONY_T), .BOOT_B(DEV_SONY_B), .BOOT_S(DEV_SONY_S)) menu_m7 (
+    .clk       ( clk_74a ),
+    .kf        ( m7_kf ),
+    .chord     ( m7_chord ),
+    .open      ( m7_open ),
+    .busy      ( ),
+    .test_key  ( m7_test_key ),
+    .bar_row   ( m7_bar_row ),
+    .dev_t     ( ), .dev_b ( ), .dev_s ( ),
+    .dc_start  ( m7_dc_start ), .dc_cmd ( m7_dc_cmd ), .dc_level ( m7_dc_level ),
+    .dc_t      ( m7_dc_t ), .dc_b ( m7_dc_b ), .dc_s ( m7_dc_s ),
+    .dc_cur    ( m7_dc_cur ), .dc_top ( m7_dc_top ), .dc_dir ( m7_dc_dir ),
+    .dc_busy   ( m7_dev_busy ),
+    .n_items   ( m7_n_items ),
+    .jump_res  ( m7_jump_res )
+);
 
 dev_ctrl dev_ctrl_m7 (
     .clk        ( clk_74a ),
-    .load       ( m7_load ),
-    .dev_t      ( m7_samsung ? DEV_SAMSUNG_T : DEV_SONY_T ),
-    .dev_b      ( m7_samsung ? DEV_SAMSUNG_B : DEV_SONY_B ),
-    .dev_s      ( m7_samsung ? DEV_SAMSUNG_S : DEV_SONY_S ),
+    .start      ( m7_dc_start ), .cmd ( m7_dc_cmd ), .level ( m7_dc_level ),
+    .dev_t      ( m7_dc_t ), .dev_b ( m7_dc_b ), .dev_s ( m7_dc_s ),
+    .cur        ( m7_dc_cur ), .top ( m7_dc_top ), .dir ( m7_dc_dir ),
     .busy       ( m7_dev_busy ),
+    .n_items    ( m7_n_items ),
+    .scroll_on  ( m7_scroll_on ), .scroll_h0 ( m7_h0 ), .scroll_h1 ( m7_h1 ),
+    .jump_res   ( m7_jump_res ),
     .func       ( m7_func ),
     .code_valid ( m7_code_valid ),
     .code_proto ( m7_code_proto ),
@@ -288,6 +302,9 @@ ir_remote ir_remote_m4 (
     .busy       ( m4_busy ),
     .active_idx ( m4_active_idx ),
     .chord      ( m7_chord ),
+    .keys_filtered ( m7_kf ),
+    .inhibit    ( m7_open ),
+    .test_key   ( m7_test_key ),
     .code_func  ( m7_func ),
     .code_valid ( m7_code_valid ),
     .code_proto ( m7_code_proto ),
@@ -576,7 +593,7 @@ core_bridge_cmd icb (
 // Start 12; TX lamp is region 13 (driven by tx_on).
 reg [3:0] ui_region_74 = 4'd0;
 always @(posedge clk_74a)
-    ui_region_74 <= !m4_busy           ? 4'd0 :
+    ui_region_74 <= !m4_busy || m7_open ? 4'd0 :
                     m4_active_idx <= 9 ? m4_active_idx + 4'd1 :
                     m4_active_idx == 14 ? 4'd11 : 4'd12;
 
@@ -598,6 +615,11 @@ ui_video ui_video_m5 (
     .active_region_sys ( ui_region_74 ),
     .slot_we  ( m7_slot_we ), .slot_waddr ( m7_slot_waddr ), .slot_wdata ( m7_slot_wdata ),
     .str_we   ( m7_str_we ),  .str_waddr  ( m7_str_waddr ),  .str_wdata  ( m7_str_wdata ),
+    .menu_on_sys     ( m7_open ),
+    .menu_bar_sys    ( m7_bar_row ),
+    .menu_scroll_sys ( m7_scroll_on ),
+    .menu_h0_sys     ( m7_h0 ),
+    .menu_h1_sys     ( m7_h1 ),
     .rgb           ( vidout_rgb ),
     .de            ( vidout_de ),
     .hs            ( vidout_hs ),

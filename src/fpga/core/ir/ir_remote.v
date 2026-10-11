@@ -12,7 +12,8 @@
 // while a code is still going out, the old code finishes its minimum frames,
 // then the new button starts -- a held button never repeats another's code.
 //
-// Start + Select chord (M7): a press of Start or Select waits up to CHORD_MS
+// While the device menu is open (`inhibit`), only the menu's TEST key sends
+// (POWER of the set it loaded). Start + Select chord (M7): a press of Start or Select waits up to CHORD_MS
 // for the other. Both -> `chord` pulses once and nothing is sent. One alone ->
 // it is passed through after the wait (held: sent while held; released
 // early: sent as a tap).
@@ -29,6 +30,9 @@ module ir_remote #(
     output wire        busy,
     output reg  [3:0]  active_idx = 4'd0,
     output reg         chord = 1'b0,  // one-cycle pulse: Start + Select pressed together
+    output wire [15:0] keys_filtered, // chord-filtered keys (menu.v)
+    input  wire        inhibit,       // menu open: send nothing ...
+    input  wire        test_key,      // ... except POWER while this is high (menu TEST)
     // code table (dev_ctrl.v)
     output wire [3:0]  code_func,
     input  wire        code_valid,
@@ -76,6 +80,7 @@ always @(*) case (cs)
     default: ss_out = 2'b00;                            // waiting or chord: hold back
 endcase
 wire [15:0] kf = {ss_out, keys_r2[13:0]};
+assign keys_filtered = kf;
 
 // ------------------------------------------------------------------ button -> function
 function [4:0] pick(input [15:0] k);     // {any, idx[3:0]}: lowest mapped bit wins
@@ -110,14 +115,15 @@ wire       sel_any;
 wire [3:0] sel_idx;
 assign {sel_any, sel_idx} = pick(kf);
 
-assign code_func = key2func(busy ? active_idx : sel_idx);
+assign code_func = inhibit ? 4'd0 : key2func(busy ? active_idx : sel_idx);   // 0 = POWER (TEST)
 
 always @(posedge clk)
     if (!busy) active_idx <= sel_idx;
 
 // Key to the encoder: only "held" while the same button is still the one
 // selected, so repeats stop when the user switches buttons.
-wire enc_key = sel_any && code_valid && (!busy || sel_idx == active_idx);
+wire enc_key = inhibit ? (test_key && code_valid)
+                       : (sel_any && code_valid && (!busy || sel_idx == active_idx));
 
 ir_engine #(.PROG_FILE(PROG_FILE)) engine (
     .clk(clk), .key(enc_key), .proto(code_proto),

@@ -234,6 +234,7 @@ def export_constants():
     # fixed-position slot words (text written at runtime); colours are the "off cursor" ones
     proto = Menu(load_types(), (0, 0, 0))
     proto.open = True
+    proto.cur[0] = ROWS                 # cursor below the visible rows: every row word is "off cursor"
     slots, _, _ = proto.page()
     for i in range(21):
         lines.append(f"localparam [31:0] MENU_SLOT_{i} = 32'h{slots[i].word():08X};")
