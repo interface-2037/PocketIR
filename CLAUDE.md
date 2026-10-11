@@ -182,6 +182,7 @@ Design constraints:
   - The reference matches published codes: LG `0x20DF10EF`, Samsung `0xE0E040BF`, Philips RC5 `0x300C`.
   - On hardware, all 12 STR-DH790 buttons work through the engine.
   - Only SIRC has been tested on a real device so far. The other protocols get real-world tests in M7.
+  - **Samsung32 verified on Samsung The Frame TV** (v0.7.0, 2026-10-10): all 12 functions from the library's Samsung TV set 0 (BN59-01180A).
 - Not done: the **RAW** protocol (stored timing lists) moves to M7/M9, where raw library entries and learned codes need it.
 
 ### M7 — Built-in code library + device menu
