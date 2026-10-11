@@ -237,8 +237,8 @@ Design constraints:
   - The `menu.v` timing fix from the separate "shorten critical path" task (cursor stored one cycle later, `Q_SCROLL`) is included here.
 - **Done when:** pointing the Sony and Samsung remotes at the Pocket lists their devices and switching to a match works; the recent list survives a restart.
 
-### M10 (optional) — External emitter
-- Drive an IR LED through the link port for room-range control. This needs a small hardware add-on.
+### M10 — External emitter: dropped (interface2037, 2026-10-11)
+- An IR LED add-on on the link port (for room range) was considered and dropped from the plan. The short range of the built-in LED is accepted.
 
 ---
 
