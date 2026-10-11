@@ -174,7 +174,7 @@ def edge_only(env, onset_us=120, jitter_us=0, seed=1):
 
 
 def starts_of(entries):
-    return rxcap.mark_starts(entries, 1)
+    return rxcap.cap_intervals(rxcap.mark_starts(entries, 1))
 
 
 ent = edge_only(envelope("SIRC15", 48, 21), jitter_us=30)
@@ -199,10 +199,12 @@ for p, (d, f) in sorted(first.items()):
     check((p, d, f) in codes, f"edge-only {name} {d:X} {f:X}: {len(codes)} codes found")
 # the real hardware capture (Sony STR-DH790 remote, POWER, v0.10.0)
 cap = rxcap.parse((Path(__file__).parent / "fixtures" / "rx_v0.10.0_sony_power.sav").read_bytes())
-codes, hits = rxcap.match_library(rxcap.mark_starts(cap["bufs"][0]["entries"], cap["bufs"][0]["idle"]), types)
+hw_iv = [rxcap.cap_intervals(rxcap.mark_starts(b["entries"], b["idle"])) for b in cap["bufs"]]
+codes, hits = rxcap.match_library(hw_iv[0], types)
 check(codes == {(1, 48, 21)} and len(hits) == 10, f"hardware capture: {codes}, {len(hits)} entries")
-codes, _ = rxcap.match_library(rxcap.mark_starts(cap["bufs"][1]["entries"], cap["bufs"][1]["idle"]), types)
+codes, _ = rxcap.match_library(hw_iv[1], types)
 check(not codes, "hardware capture, leaders only: no match")
+check(rxcap.readable(hw_iv[0]) and not rxcap.readable(hw_iv[1]), "readable: full frames yes, leaders only no")
 
 # ---- 9. report runs on real-looking files (noise buffer, empty, active)
 noise = [(0, 0x7FFFFFFF), (1, 500), (0, 70), (1, 10_000), (0, 3)]

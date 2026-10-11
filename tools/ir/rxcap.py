@@ -363,22 +363,31 @@ def library_hits(types, match):
 # pulses, then nothing; hardware v0.10.0), so mark lengths are lost but mark
 # *starts* are accurate to ~30 us. A code is found by comparing the captured
 # start-to-start intervals with the reference encoder's for every library code.
-# Times are in engine ticks (4 us), like the RTL will use.
+# This is the bit-exact model of ir/ir_rx_marks.v + lib/ir_match.v: times in
+# engine ticks (4 us = 297 clocks), counted from each mark start.
 TICK_CLK = ir.tick_cycles()      # 297 clocks
-IDLE_MIN_US = 250                # an active edge after at least this much idle starts a mark
+IDLE_MIN_CLK = CLK_HZ // 1_000_000 * 250   # 250 us of idle before an active edge starts a mark
 FRAME_GAP_TICKS = 1000           # 4 ms: frames are separated by longer intervals than this
 TOL_MIN_TICKS = 40               # interval tolerance: max(160 us, interval / 16)
+MIN_FRAME_MARKS = 8              # fewer marks between gaps: "couldn't read that"
+MAX_CAND = 32                    # frame starts tried (lib/ir_match.v keeps the first 32)
 
 
 def mark_starts(entries, idle):
-    """Raw capture entries -> mark start times in ticks."""
+    """Raw capture entries -> mark start times in clocks (from the first edge)."""
     t, out, act = 0, [], 1 - idle
     for i, (lvl, d) in enumerate(entries):
         if i:
             t += d
-        if lvl == act and (i == 0 or us(d) >= IDLE_MIN_US):
-            out.append(t // TICK_CLK)
+        if lvl == act and (i == 0 or d >= IDLE_MIN_CLK):
+            out.append(t)
     return out
+
+
+def cap_intervals(starts):
+    """Mark starts (clocks) -> start-to-start intervals in ticks, as ir_rx_marks.v counts
+    them (tick prescaler restarted at every mark start; 16-bit saturating)."""
+    return [min(0xFFFF, (b - a) // TICK_CLK) for a, b in zip(starts, starts[1:])]
 
 
 def intervals(starts):
@@ -399,27 +408,39 @@ def tol(iv):
     return max(TOL_MIN_TICKS, iv >> 4)
 
 
+def candidates(cap_iv):
+    """Frame starts: the first mark and every mark after a gap (first MAX_CAND)."""
+    return ([0] + [k + 1 for k, iv in enumerate(cap_iv) if iv >= FRAME_GAP_TICKS])[:MAX_CAND]
+
+
 def frame_matches(cap_iv, ref_iv):
     """Does one frame with start intervals ref_iv appear in the capture? A frame
     starts at the first mark or after a gap >= FRAME_GAP_TICKS, and must be
     followed by such a gap or the end of the capture (so SIRC12 can't match the
     first 12 bits of a SIRC15 frame)."""
     m = len(ref_iv)
-    for s in range(len(cap_iv) + 1):
+    for s in candidates(cap_iv):
         if s + m > len(cap_iv):
             break
-        if s and cap_iv[s - 1] < FRAME_GAP_TICKS:
-            continue
         if all(abs(cap_iv[s + k] - ref_iv[k]) <= tol(ref_iv[k]) for k in range(m)) and \
                 (s + m == len(cap_iv) or cap_iv[s + m] >= FRAME_GAP_TICKS):
             return True
     return False
 
 
-def match_library(starts, types):
-    """Mark starts -> (matching codes {(proto id, D, F)}, [(t, b, s, [functions])]).
+def readable(cap_iv):
+    """Is there a frame-like run of >= MIN_FRAME_MARKS marks between gaps?"""
+    run = 1
+    for iv in cap_iv:
+        run = 1 if iv >= FRAME_GAP_TICKS else run + 1
+        if run >= MIN_FRAME_MARKS:
+            return True
+    return False
+
+
+def match_library(cap_iv, types):
+    """Capture intervals (ticks) -> (matching codes {(proto id, D, F)}, [(t, b, s, [functions])]).
     Biphase protocols are tried with both toggle values."""
-    cap_iv = intervals(starts)
     seen, hits = {}, []
     for ti, (_, brands) in enumerate(types):
         for bi, (_, sets) in enumerate(brands):
@@ -471,7 +492,7 @@ def report(cap, types=None, max_hits=8):
         lines.append(f"  runs shorter than 1 us (chatter): {a['glitches']}")
         starts = mark_starts(buf["entries"], buf["idle"])
         if types is not None:
-            codes, hits = match_library(starts, types)
+            codes, hits = match_library(cap_intervals(starts), types)
             found = ", ".join(f"{ircompile.PROTO_ORDER[p]} {d:X} {f:X}" for p, d, f in sorted(codes)) or "none"
             lines.append(f"  mark-start match ({len(starts)} marks, what the Pocket will use): {found}")
             for ti, bi, si, fs in hits[:max_hits]:
@@ -499,3 +520,17 @@ def report(cap, types=None, max_hits=8):
                     if not hits:
                         lines.append("      library: not found")
     return lines
+
+
+def identify(cap_iv, types, prev=None):
+    """What the Pocket shows for one remote button (lib/ir_match.v):
+    (result, [(t, b, s)]). result 0 matches, 1 no match, 2 couldn't read,
+    3 narrowing found none. prev: the list from the previous button (narrowing);
+    it is kept when the new button narrows it to nothing."""
+    _, hits = match_library(cap_iv, types)
+    found = [(t, b, s) for t, b, s, _ in hits]
+    if prev is not None:
+        keep = set(prev)
+        new = [h for h in found if h in keep]
+        return (0, new) if new else (3 if readable(cap_iv) else 2, list(prev))
+    return (0, found) if found else (1 if readable(cap_iv) else 2, [])

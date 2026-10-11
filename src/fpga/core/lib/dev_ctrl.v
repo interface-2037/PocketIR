@@ -48,7 +48,10 @@ module dev_ctrl #(
     output reg  [31:0] slot_wdata = 32'd0,
     output reg         str_we = 1'b0,
     output reg  [9:0]  str_waddr = 10'd0,
-    output reg  [7:0]  str_wdata = 8'd0
+    output reg  [7:0]  str_wdata = 8'd0,
+    // second library read port (M9: lib/ir_match.v scans the library), one-cycle latency
+    input  wire [15:0] lib2_addr,
+    output reg  [7:0]  lib2_q = 8'd0
 );
 
 `include "ir_lib.vh"
@@ -66,6 +69,7 @@ initial $readmemh(LIB_FILE, lib);
 reg [15:0] la = 16'd0;
 reg [7:0]  lq = 8'd0;
 always @(posedge clk) lq <= lib[la];
+always @(posedge clk) lib2_q <= lib[lib2_addr];
 
 // ------------------------------------------------------------------ code table
 reg [11:0] valid = 12'd0;
