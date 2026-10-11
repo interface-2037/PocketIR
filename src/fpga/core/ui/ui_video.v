@@ -40,6 +40,12 @@ module ui_video #(
     input  wire        str_we,
     input  wire [9:0]  str_waddr,
     input  wire [7:0]  str_wdata,
+    // device menu (clk_sys domain; taken over once per frame)
+    input  wire        menu_on_sys,
+    input  wire [3:0]  menu_bar_sys,      // highlighted row 0..8, 15 = none
+    input  wire        menu_scroll_sys,   // draw the scroll thumb
+    input  wire [8:0]  menu_h0_sys,       // thumb rows [h0, h1)
+    input  wire [8:0]  menu_h1_sys,
     output reg  [23:0] rgb = 24'd0,
     output reg         de  = 1'b0,
     output reg         hs  = 1'b0,
@@ -188,9 +194,34 @@ always @(posedge clk) begin
     hs1 <= hs0;  hs2 <= hs1; hs <= hs2;
     vs1 <= vs0;  vs2 <= vs1; vs <= vs2;
     text2 <= text1;
-    rgb <= de2 ? {mix(rgb2[23:16], fg[23:16], text2[4:0]),
-                  mix(rgb2[15:8],  fg[15:8],  text2[4:0]),
-                  mix(rgb2[7:0],   fg[7:0],   text2[4:0])} : 24'd0;
+    menu1 <= menu_px; menu2 <= menu1;
+    rgb <= de2 ? {mix(bg2[23:16], fg[23:16], text2[4:0]),
+                  mix(bg2[15:8],  fg[15:8],  text2[4:0]),
+                  mix(bg2[7:0],   fg[7:0],   text2[4:0])} : 24'd0;
 end
+
+// ------------------------------------------------------------- menu background
+// Menu settings cross from clk_sys with a 2-flop synchroniser per bit and are
+// taken over at the start of each frame, so a frame never mixes old and new.
+`include "ui_menu.vh"
+reg [23:0] ms1 = 0, ms2 = 0;              // {on, bar[3:0], scroll, h0[8:0], h1[8:0]}
+reg        m_on = 1'b0, m_scroll = 1'b0;
+reg [3:0]  m_bar = 4'd15;
+reg [8:0]  m_h0 = 0, m_h1 = 0;
+always @(posedge clk) begin
+    ms1 <= {menu_on_sys, menu_bar_sys, menu_scroll_sys, menu_h0_sys, menu_h1_sys};
+    ms2 <= ms1;
+    if (vs0) {m_on, m_bar, m_scroll, m_h0, m_h1} <= ms2;
+end
+
+// colour of pixel t (vx, vy) in menu mode; aligned with the picture at t+2
+wire in_x   = (vx >= MENU_BAR_X0) && (vx < MENU_BAR_X1);
+wire [9:0] bar_y0 = MENU_ROW_Y0 - 10'd12 + m_bar * MENU_ROW_H;
+wire on_bar = (m_bar != 4'd15) && in_x && (vy >= bar_y0) && (vy < bar_y0 + 10'd24);
+wire on_sep = in_x && (vy == MENU_SEP_Y0 || vy == MENU_SEP_Y1);
+wire on_thm = m_scroll && (vx == MENU_SCROLL_X || vx == MENU_SCROLL_X + 1) && (vy >= m_h0) && (vy < m_h1);
+wire [24:0] menu_px = {m_on, on_bar ? TXT_COL4 : on_thm ? TXT_COL3 : on_sep ? MENU_BAR : MENU_BG};
+reg  [24:0] menu1 = 0, menu2 = 0;
+wire [23:0] bg2 = menu2[24] ? menu2[23:0] : rgb2;
 
 endmodule

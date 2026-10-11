@@ -39,12 +39,43 @@ ui_video #(
 ) dut (
     .clk(clk), .reset_n(1'b1), .active_region(region), .tx_on(tx),
     .clk_sys(clk_sys), .active_region_sys(region_sys),
-    .slot_we(1'b0), .slot_waddr(5'd0), .slot_wdata(32'd0),
-    .str_we(1'b0), .str_waddr(10'd0), .str_wdata(8'd0),
+    .slot_we(slot_we), .slot_waddr(slot_waddr), .slot_wdata(slot_wdata),
+    .str_we(str_we), .str_waddr(str_waddr), .str_wdata(str_wdata),
+    .menu_on_sys(menu_on), .menu_bar_sys(menu_bar), .menu_scroll_sys(menu_scroll),
+    .menu_h0_sys(menu_h0), .menu_h1_sys(menu_h1),
     .rgb(rgb), .de(de), .hs(hs), .vs(vs), .skip(skip), .underflow(underflow));
 
 reg [23:0] exp_idle  [0:N-1];
 reg [23:0] exp_enter [0:N-1];
+reg [23:0] exp_menu  [0:N-1];
+// text-layer writes and menu inputs, driven on clk_sys like dev_ctrl.v does
+reg        slot_we = 0, str_we = 0, menu_on = 0, menu_scroll = 0;
+reg [4:0]  slot_waddr = 0;
+reg [31:0] slot_wdata = 0;
+reg [9:0]  str_waddr = 0;
+reg [7:0]  str_wdata = 0;
+reg [3:0]  menu_bar = 4'd15;
+reg [8:0]  menu_h0 = 0, menu_h1 = 0;
+
+task write_menu_page;                   // build/ui_expected/menu_page.txt -> slots + menu inputs
+    integer fd, rc, k, i, w, len, c, bar, sc, h0, h1;
+    begin
+        fd = $fopen("build/ui_expected/menu_page.txt", "r");
+        rc = $fscanf(fd, "%d %d %d %d", bar, sc, h0, h1);
+        for (k = 0; k < 32; k = k + 1) begin
+            rc = $fscanf(fd, "%h %d", w, len);
+            @(negedge clk_sys); slot_we = 1; slot_waddr = k; slot_wdata = w;
+            @(negedge clk_sys); slot_we = 0;
+            for (i = 0; i <= len; i = i + 1) begin
+                if (i < len) rc = $fscanf(fd, " %h", c); else c = 0;
+                @(negedge clk_sys); str_we = 1; str_waddr = k * 32 + i; str_wdata = c;
+                @(negedge clk_sys); str_we = 0;
+            end
+        end
+        $fclose(fd);
+        menu_bar = bar; menu_scroll = sc; menu_h0 = h0; menu_h1 = h1; menu_on = 1;
+    end
+endtask
 integer errors = 0;
 
 task run_frame(input integer which, input integer fd);
@@ -58,7 +89,7 @@ task run_frame(input integer which, input integer fd);
         while (!vs || cycles == 0) begin
             cycles = cycles + 1;
             if (de) begin
-                e = which ? exp_enter[k] : exp_idle[k];
+                e = (which == 2) ? exp_menu[k] : which ? exp_enter[k] : exp_idle[k];
                 if (k < N && rgb !== e) begin
                     if (bad < 5) $display("  frame %0d pixel %0d (x %0d y %0d): got %h exp %h",
                                           which, k, k % W, k / W, rgb, e);
@@ -82,12 +113,12 @@ task run_frame(input integer which, input integer fd);
             $display("  frame %0d: %0d clocks per frame (exp %0d)", which, cycles, UI_H_TOTAL * UI_V_TOTAL);
             errors = errors + 1;
         end
-        $display("  frame %0d (%s): %0d mismatching pixels", which, which ? "ENTER + TX" : "idle", bad);
+        $display("  frame %0d (%s): %0d mismatching pixels", which, which == 2 ? "menu" : which ? "ENTER + TX" : "idle", bad);
         errors = errors + bad;
     end
 endtask
 
-integer fd0, fd1;
+integer fd0, fd1, fd2;
 initial begin
     fd0 = $fopen("build/ui_expected/idle.hex", "r");
     if (fd0 == 0) begin
@@ -97,6 +128,7 @@ initial begin
     $fclose(fd0);
     $readmemh("build/ui_expected/idle.hex", exp_idle);
     $readmemh("build/ui_expected/enter.hex", exp_enter);
+    $readmemh("build/ui_expected/menu.hex", exp_menu);
 
     fd0 = $fopen("sim/out/ui_frame_idle.hex", "w");
     fd1 = $fopen("sim/out/ui_frame_enter.hex", "w");
@@ -106,7 +138,13 @@ initial begin
     region = REGION_ENTER; tx = 1;  // change during VS (blanking)
     region_sys = REGION_ENTER;       // text layer: ENTER label lit
     run_frame(1, fd1);
-    $fclose(fd0); $fclose(fd1);
+    // frame 2: device menu (TV brands, cursor on SAMSUNG): page written, menu mode on
+    region = 0; tx = 0; region_sys = 0;
+    write_menu_page;
+    @(posedge vs);                  // let the page land and the menu inputs take effect
+    fd2 = $fopen("sim/out/ui_frame_menu.hex", "w");
+    run_frame(2, fd2);
+    $fclose(fd0); $fclose(fd1); $fclose(fd2);
 
     if (underflow) begin $display("  RLE stream underflow"); errors = errors + 1; end
     if (errors == 0) $display("PASS tb_ui_video");

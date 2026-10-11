@@ -140,6 +140,12 @@ def main_slots(name, model, cs):
     return out
 
 
+def rgb_hex(img):
+    """One RRGGBB line per pixel, raster order (the testbenches' expected-frame format)."""
+    b = img.convert("RGB").tobytes()
+    return "".join(f"{b[i]:02X}{b[i + 1]:02X}{b[i + 2]:02X}\n" for i in range(0, len(b), 3))
+
+
 def check_no_overlap(slots):
     boxes = []
     for s in slots:
@@ -203,7 +209,7 @@ def main():
         img = Image.open(exp / f"{name}_picture.png").convert("RGB")
         draw(img, slots, region)
         img.save(exp / f"{name}.png")
-        (exp / f"{name}.hex").write_text("".join(f"{r:02X}{g:02X}{b:02X}\n" for r, g, b in img.getdata()))
+        (exp / f"{name}.hex").write_text(rgb_hex(img))
     print(f"fonts {FONTS[0].h}/{FONTS[1].h} px high, {len([s for s in slots if s.text])} slots "
           f"-> src/fpga/core/ui, build/ui_expected")
 
