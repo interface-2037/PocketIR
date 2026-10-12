@@ -40,16 +40,47 @@ def r(*v):
     return [int(round(x * S)) for x in v]
 
 
-def pocket(d, x, y, w=104, h=60):
-    """Pocket lying on its side, bottom edge (IR / power LED) facing right."""
-    d.rounded_rectangle(r(x, y, x + w, y + h), radius=7 * S, fill=BODY)
-    d.rounded_rectangle(r(x + 6, y + 7, x + 52, y + h - 7), radius=2 * S, fill=SCREEN)
-    # d-pad (lower right) and face buttons (upper right), as in the 180-degree grip
-    cx, cy = x + 72, y + 42
-    d.rectangle(r(cx - 7, cy - 2.5, cx + 7, cy + 2.5), fill=KEY)
-    d.rectangle(r(cx - 2.5, cy - 7, cx + 2.5, cy + 7), fill=KEY)
-    for bx, by in ((x + 66, y + 14), (x + 76, y + 18), (x + 72, y + 10), (x + 80, y + 9)):
-        d.ellipse(r(bx - 3, by - 3, bx + 3, by + 3), fill=KEY)
+# Analogue Pocket front, measured from a straight-on product photo, in units
+# where the body is 708 wide x 1200 tall (upright, origin top-left).
+PK_W, PK_H, PK_CORNER = 708, 1200, 30
+PK_GLASS = (6, 8, 702, 639)                    # glass panel
+PK_DISPLAY = (76, 78, 624, 568)                # lit area, 548 x 490 (10:9)
+PK_DPAD = (148, 805, 167, 57)                  # centre u, v; arm length, arm width
+PK_FACE = [(542, 732), (469, 805), (615, 805), (542, 878)]   # diamond, r 34
+PK_FACE_R = 34
+PK_SMALL = [(288, 1078), (352, 1078), (418, 1078)]          # r 21
+PK_SMALL_R = 21
+GLASS = 150
+
+
+def pocket(d, x, y, h=60):
+    """Real-proportion Pocket lying on its side: top edge left, bottom edge
+    (IR / power LED) facing right, face buttons up, d-pad down."""
+    k = h / PK_W
+    w = PK_H * k
+
+    def P(u, v):                               # upright (u, v) -> banner (x, y)
+        return x + v * k, y + (PK_W - u) * k
+
+    def box(u0, v0, u1, v1):
+        (xa, ya), (xb, yb) = P(u0, v0), P(u1, v1)
+        return min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb)
+
+    def circle(u, v, rad, fill):
+        cx, cy = P(u, v)
+        d.ellipse(r(cx - rad * k, cy - rad * k, cx + rad * k, cy + rad * k), fill=fill)
+
+    d.rounded_rectangle(r(x, y, x + w, y + h), radius=PK_CORNER * k * S, fill=BODY)
+    d.rounded_rectangle(r(*box(*PK_GLASS)), radius=PK_CORNER * 0.8 * k * S, fill=GLASS)
+    d.rectangle(r(*box(*PK_DISPLAY)), fill=SCREEN)
+    cu, cv, arm, wid = PK_DPAD
+    for du, dv in ((arm, wid), (wid, arm)):
+        d.rounded_rectangle(r(*box(cu - du / 2, cv - dv / 2, cu + du / 2, cv + dv / 2)),
+                            radius=6 * k * S, fill=KEY)
+    for u, v in PK_FACE:
+        circle(u, v, PK_FACE_R, KEY)
+    for u, v in PK_SMALL:
+        circle(u, v, PK_SMALL_R, KEY)
     # power LED on the bottom edge
     led = (x + w - 1, y + h / 2)
     d.ellipse(r(led[0] - 2.2, led[1] - 2.2, led[0] + 2.2, led[1] + 2.2), fill=255)
@@ -82,7 +113,7 @@ def banner():
     d.text(r(24, 66), "PocketIR", font=font(40), fill=TEXT, anchor="ls")
     d.text(r(25, 90), "UNIVERSAL TV / AV REMOTE", font=font(12, "SemiBold"), fill=SUB, anchor="ls")
     d.text(r(25, 108), "1,000+ DEVICES · LEARNS YOUR REMOTE", font=font(10, "Medium"), fill=SUB - 30, anchor="ls")
-    led = pocket(d, 262, 60, w=92, h=54)
+    led = pocket(d, 254, 57, h=60)
     waves(d, led[0] + 3, led[1], n=3, step=14, span=40)
     tv(d, 426, 48, w=80, h=54)
     return im.resize((W, H), Image.LANCZOS)
