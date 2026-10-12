@@ -5,9 +5,11 @@ Draws both in grayscale at 4x and downsamples, then writes:
   docs/ui/platform_banner.png, docs/ui/core_icon.png     previews (upright)
   dist/platforms/_images/pocketir.bin, dist/icon.bin     APF images
 
-APF image format (checked against the core template's own images): 16 bits
-per pixel, luminance in the first byte, 0 in the second; pixels stored
-row-major from the upright image rotated 90 degrees counter-clockwise.
+APF image format (checked against the core template's own images and the
+openFPGA Library's converter, which reads int16 LE and shows 255 - value):
+16 bits per pixel, INVERTED brightness (255 = black) in the first byte, 0 in
+the second; pixels stored row-major from the upright image rotated 90 degrees
+counter-clockwise. v0.11.1 stored plain brightness and showed inverted.
 
 Usage:  python tools/ui/platform_art.py [--check]   (--check: decode the .bin
 files back and compare with the previews, write nothing)
@@ -123,12 +125,12 @@ def icon():
 
 def to_apf(im):
     rot = im.rotate(90, expand=True)
-    return bytes(b for p in rot.getdata() for b in (p, 0))
+    return bytes(b for p in rot.getdata() for b in (255 - p, 0))
 
 
 def from_apf(data, w, h):
     im = Image.new("L", (h, w))
-    im.putdata(data[0::2])
+    im.putdata([255 - v for v in data[0::2]])
     return im.rotate(-90, expand=True)
 
 
